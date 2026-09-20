@@ -64,6 +64,23 @@ rather than producing degraded audio; normalization runs in pure Python and is t
 10 minutes of audio. Conversion parameters, the source checksum, and the output checksum are
 written to a `<output>.manifest.json` sidecar.
 
+Transcribe normalized audio into word-timestamp IR:
+
+```bash
+uv run prosody-markup transcribe normalized.wav --output transcript.json --speaker S1
+```
+
+Transcription runs behind a provider-neutral adapter, so no engine type reaches the rest of the
+pipeline. The reference adapter is local `faster-whisper`, imported lazily and never required by
+the package, its tests, or CI; install it yourself to transcribe real audio. Input must already be
+canonical, so transcription never silently resamples and loses provenance. Word timestamps are
+checked for monotonicity and against the recording length, and model identity, version, and audio
+checksum are recorded. Low-confidence words are kept rather than dropped — suppression is the
+legend's decision at assignment.
+
+The result is valid word-timestamp IR but not yet assignable: its baseline is left pending because
+per-speaker normalization is a later stage.
+
 Expected marked text:
 
 ```text

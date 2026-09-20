@@ -44,8 +44,11 @@ packages = ["src/prosody_markup"]
 "legend/tier1.yaml" = "prosody_markup/data/tier1.yaml"
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -m 'not integration'"
 testpaths = ["tests"]
+markers = [
+  "integration: needs a real local ASR model; never runs implicitly or in CI",
+]
 
 [tool.ruff]
 line-length = 100
@@ -58,3 +61,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 python_version = "3.11"
 strict = true
 packages = ["prosody_markup"]
+
+# Optional local ASR dependency; deliberately not required by the package, its
+# tests, or CI.
+[[tool.mypy.overrides]]
+module = "faster_whisper.*"
+ignore_missing_imports = true
