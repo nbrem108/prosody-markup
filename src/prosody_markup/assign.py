@@ -18,6 +18,7 @@ class Candidate:
     mark: str
     confidence: float
     strength: int
+    prominence: float
 
 
 def is_eligible(token: Token) -> bool:
@@ -43,6 +44,17 @@ def suppression_reasons(token: Token, legend: Legend) -> list[str]:
     if policy.suppress_overlap and token.overlap:
         reasons.append("overlapping_speech")
     return reasons
+
+
+def _prominence(value: float, threshold: float) -> float:
+    """Relative excess over the channel threshold, comparable across channels.
+
+    Raw feature values are not comparable (an f0 z-score of 2.8 and a pause of
+    0.8s live on different scales), so normalize each by its own threshold.
+    """
+    if threshold == 0:
+        return value
+    return (value - threshold) / abs(threshold)
 
 
 def _strength(channel: str, value: float, threshold: float) -> int:
@@ -135,6 +147,7 @@ def assign_marks(document: Document, legend: Legend) -> Document:
                         mark=rule.mark,
                         confidence=confidence,
                         strength=_strength(channel, value, rule.threshold),
+                        prominence=_prominence(value, rule.threshold),
                     )
                 )
 
@@ -151,7 +164,11 @@ def assign_marks(document: Document, legend: Legend) -> Document:
         allowed = math.floor(eligible_by_turn[key] * legend.density_cap)
         ranked_tokens = sorted(
             token_indexes,
-            key=lambda index: (-max(item.confidence for item in candidate_tokens[index]), index),
+            key=lambda index: (
+                -max(item.prominence for item in candidate_tokens[index]),
+                -max(item.confidence for item in candidate_tokens[index]),
+                index,
+            ),
         )
         retained.update(ranked_tokens[:allowed])
 

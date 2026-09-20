@@ -51,8 +51,11 @@ Marked-token density is calculated per speaker turn after punctuation restoratio
 punctuation-only tokens. Implementations SHOULD supply a stable `turn_id`; when absent, the
 reference implementation infers turns from contiguous speaker spans. A token with one or more
 marks counts once. Tier 1 output MUST NOT mark more than 15% of eligible tokens in a turn. When
-candidates exceed the cap, retain the highest-confidence candidates, with deterministic
-token-order tie breaking.
+candidates exceed the cap, retain the candidates with the greatest prominence, where prominence
+is the feature value's relative excess over its channel threshold, `(value - threshold) /
+abs(threshold)`. Confidence gates assignment through `confidence_floor`; it MUST NOT be reused as
+the ranking signal, because a barely-suprathreshold token in clean audio would otherwise outrank a
+strongly marked token in noisier audio. Ties break on confidence, then on token order.
 
 ## Rendering
 
