@@ -151,3 +151,40 @@ def test_density_cap_ranks_prominence_over_confidence(fixture_document):  # type
 
     assert marked_ids == ["t09"]
     assert "density_cap" in assigned.tokens[2].suppressed
+
+
+def test_short_turn_floor_marks_are_identifiable(fixture_document):  # type: ignore[no-untyped-def]
+    """SPEC: marks kept only by the short-turn floor must stay distinguishable."""
+    fixture_document.tokens = fixture_document.tokens[:6]
+
+    legend = load_legend()
+    assigned = assign_marks(fixture_document, legend)
+    marked = [token for token in assigned.tokens if token.marks]
+
+    assert [token.id for token in marked] == ["t04"]
+    assert all(token.density_floor_retained for token in marked)
+    assert assigned.to_dict()["tokens"][3]["density_floor_retained"] is True
+
+
+def test_marks_within_the_allowance_are_not_floor_retained(fixture_document):  # type: ignore[no-untyped-def]
+    """A turn whose allowance is >= 1 keeps marks on the cap, not the floor."""
+    legend = load_legend()
+    assigned = assign_marks(fixture_document, legend)
+    marked = [token for token in assigned.tokens if token.marks]
+
+    assert [token.id for token in marked] == ["t04", "t25"]
+    assert not any(token.density_floor_retained for token in marked)
+
+
+def test_short_turn_floor_may_exceed_the_density_cap(fixture_document):  # type: ignore[no-untyped-def]
+    """SPEC: the floor is a bounded exception, so a short turn may exceed density_cap."""
+    fixture_document.tokens = fixture_document.tokens[:6]
+
+    legend = load_legend()
+    assigned = assign_marks(fixture_document, legend)
+    eligible = [token for token in assigned.tokens if is_eligible(token)]
+    marked = [token for token in assigned.tokens if token.marks]
+
+    assert len(marked) / len(eligible) > legend.density_cap
+    assert len(marked) <= legend.min_marks_per_turn
+    assert len(marked) <= len(eligible)
