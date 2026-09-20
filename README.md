@@ -81,6 +81,25 @@ legend's decision at assignment.
 The result is valid word-timestamp IR but not yet assignable: its baseline is left pending because
 per-speaker normalization is a later stage.
 
+Measure per-word pitch, with an inspectable debug bundle:
+
+```bash
+uv run prosody-markup extract normalized.wav transcript.json \
+  --output features.json --debug-dir reports/generated/run-001
+```
+
+Pitch is measured with Praat through `praat-parselmouth`, locally and with no model download. Every
+eligible word gets voiced coverage, F0 mean, minimum, maximum, and range, or an explicit
+suppression reason — `window_too_short`, `unvoiced`, `insufficient_voiced_coverage`,
+`f0_out_of_range`, or `octave_ambiguous`. Measurements are written as raw values; normalization
+into comparable features and any mark assignment are later stages, so extraction never decides
+typography. `--debug-dir` writes `word-features.csv` and `pitch-contour.csv`.
+
+Octave errors get a specific guard. When the ceiling cannot fit the true F0, Praat reports a
+confident subharmonic — 100 Hz for a 200 Hz tone, at full voiced coverage and with no within-word
+spread — which neither a range check nor a spread check detects. Each word is therefore re-measured
+at a raised ceiling and refused when the two analyses disagree by more than half an octave.
+
 Expected marked text:
 
 ```text
@@ -92,7 +111,7 @@ No, I *got* it. It is fine. I will just redo the whole deck before the morning r
 ```text
 SPEC.md                 versioned legend specification (CC BY 4.0)
 legend/tier1.yaml       declarative thresholds and density policy
-src/prosody_markup/     IR, assignment engine, renderers, CLI
+src/prosody_markup/     IR, audio, transcription, extraction, assignment, renderers, CLI
 examples/               deterministic input fixtures
 tests/                  contract, assignment, and renderer tests
 docs/                   product brief, architecture, evals, roadmap, governance
