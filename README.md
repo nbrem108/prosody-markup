@@ -39,6 +39,17 @@ uv run prosody-markup inspect examples/tier1-input.json
 uv run pytest
 ```
 
+Inspect a local PCM WAV before transcription:
+
+```bash
+uv run prosody-markup audio inspect input.wav
+```
+
+The command reports format, duration, peak level, clipping, silence ratio, source checksum, and
+whether conversion to the pipeline's canonical mono 16 kHz signed 16-bit PCM format is required.
+It never mutates the source file. Inspection is bounded to WAV files of at most 256 MiB and streams
+decoded sample metrics in chunks from one immutable input snapshot.
+
 Expected marked text:
 
 ```text
@@ -65,7 +76,8 @@ The first implementation slice deliberately starts downstream of audio analysis.
 - confidence floors, suppression rules, and the density cap are deterministic;
 - multiple renderers consume the same versioned IR.
 
-See [docs/ROADMAP.md](docs/ROADMAP.md) for the path to real audio.
+See [docs/ROADMAP.md](docs/ROADMAP.md) for the milestone sequence and
+[docs/V0_1_REAL_AUDIO_PLAN.md](docs/V0_1_REAL_AUDIO_PLAN.md) for the ordered implementation plan.
 
 ## Contributing
 

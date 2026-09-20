@@ -2,6 +2,8 @@
 
 ## v0.1 — Does the contract survive? (current)
 
+Execution plan: [`V0_1_REAL_AUDIO_PLAN.md`](V0_1_REAL_AUDIO_PLAN.md).
+
 - Versioned IR and Tier 1 draft legend.
 - Declarative assignment with suppression and density cap.
 - Markdown, HTML, and Unicode renderers.
