@@ -119,7 +119,12 @@ def _validate_document(document: Document) -> None:
     validate_tokens(document.tokens)
 
 
-def assign_marks(document: Document, legend: Legend) -> Document:
+def collect_candidates(document: Document, legend: Legend) -> list[Candidate]:
+    """Channel candidates that cleared threshold and confidence floor.
+
+    This is the state before the per-turn density cap, so a caller can record
+    what the legend proposed separately from what survived.
+    """
     if document.schema_version != legend.schema_version:
         raise ValueError(
             f"Schema mismatch: document={document.schema_version}, legend={legend.schema_version}"
@@ -127,13 +132,6 @@ def assign_marks(document: Document, legend: Legend) -> Document:
     _validate_document(document)
 
     candidates: list[Candidate] = []
-    turn_keys = _turn_keys(document.tokens)
-    eligible_by_turn: dict[tuple[str | None, str], int] = {}
-    for index, token in enumerate(document.tokens):
-        if is_eligible(token):
-            key = turn_keys[index]
-            eligible_by_turn[key] = eligible_by_turn.get(key, 0) + 1
-
     for index, token in enumerate(document.tokens):
         token.marks.clear()
         token.suppressed = suppression_reasons(token, legend)
@@ -159,6 +157,18 @@ def assign_marks(document: Document, legend: Legend) -> Document:
                         prominence=_prominence(value, rule.threshold),
                     )
                 )
+    return candidates
+
+
+def assign_marks(document: Document, legend: Legend) -> Document:
+    candidates = collect_candidates(document, legend)
+
+    turn_keys = _turn_keys(document.tokens)
+    eligible_by_turn: dict[tuple[str | None, str], int] = {}
+    for index, token in enumerate(document.tokens):
+        if is_eligible(token):
+            key = turn_keys[index]
+            eligible_by_turn[key] = eligible_by_turn.get(key, 0) + 1
 
     candidate_tokens: dict[int, list[Candidate]] = {}
     for candidate in candidates:

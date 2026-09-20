@@ -11,6 +11,7 @@ from .audio import AudioError, inspect_wav, normalize_wav
 from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
+from .normalize import NormalizationError, normalize_and_assign
 from .render import RENDERERS
 from .transcribe import (
     FasterWhisperAdapter,
@@ -95,6 +96,32 @@ def _extract(args: argparse.Namespace) -> int:
     return 0
 
 
+def _normalize(args: argparse.Namespace) -> int:
+    document = _load_document(args.input)
+    legend = load_legend(args.legend)
+    result = normalize_and_assign(document, legend)
+
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        json.dumps(result.document.to_dict(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    if args.candidates:
+        args.candidates.parent.mkdir(parents=True, exist_ok=True)
+        args.candidates.write_text(
+            json.dumps(result.candidate_rows(), indent=2, sort_keys=True) + "\n", encoding="utf-8"
+        )
+
+    marked = sum(1 for token in result.document.tokens if token.marks)
+    print(
+        f"baseline {result.baseline.center_semitones:.2f}±{result.baseline.spread_semitones:.2f} "
+        f"semitones from {result.baseline.measured_words} words; "
+        f"{len(result.candidates)} candidates -> {marked} marks"
+    )
+    if result.degenerate_spread:
+        print("note: spread below the usable minimum; no word was ranked prominent")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -146,6 +173,16 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--pitch-floor", dest="pitch_floor", type=float, default=75.0)
     extract_parser.add_argument("--pitch-ceiling", dest="pitch_ceiling", type=float, default=500.0)
     extract_parser.set_defaults(handler=_extract)
+
+    normalize_parser = subparsers.add_parser(
+        "normalize",
+        help="Normalize measured pitch against a speaker baseline and assign marks",
+    )
+    normalize_parser.add_argument("input", type=Path)
+    normalize_parser.add_argument("--output", type=Path, required=True)
+    normalize_parser.add_argument("--candidates", type=Path)
+    normalize_parser.add_argument("--legend", type=Path)
+    normalize_parser.set_defaults(handler=_normalize)
     return parser
 
 
@@ -153,7 +190,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except (AudioError, TranscriptionError, ExtractionError) as exc:
+    except (AudioError, TranscriptionError, ExtractionError, NormalizationError) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 

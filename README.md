@@ -100,6 +100,41 @@ confident subharmonic — 100 Hz for a 200 Hz tone, at full voiced coverage and 
 spread — which neither a range check nor a spread check detects. Each word is therefore re-measured
 at a raised ceiling and refused when the two analyses disagree by more than half an octave.
 
+Normalize measured pitch against a speaker baseline and assign marks:
+
+```bash
+uv run prosody-markup normalize features.json \
+  --output assigned.json --candidates candidates.json
+```
+
+Note this is a different stage from `audio normalize`, which converts the waveform. This one
+converts measurements into comparable features.
+
+The session baseline uses a median and a scaled median absolute deviation over the measured words,
+in semitones rather than hertz: prominence is perceived as a ratio, so one z threshold only carries
+the same meaning across speakers on a log scale, and a robust centre keeps a single octave error or
+shout from dragging the scale. Method, parameters, window, and word count are recorded in the IR.
+
+Confidence in the normalized feature is the word's voiced coverage, so a partly measured word falls
+below the legend's confidence floor and is never marked. A session with too few measured words, or
+with no usable spread, produces no marks rather than guesses. Only the pitch channel is enabled;
+duration and timing stay fixture-tested until separately validated. `--candidates` records what the
+legend proposed, separately from what the density cap kept.
+
+The whole chain, from a 44.1 kHz stereo recording to marked text:
+
+```bash
+uv run prosody-markup audio normalize recording.wav --output normalized.wav
+uv run prosody-markup transcribe normalized.wav --output transcript.json --speaker S1
+uv run prosody-markup extract normalized.wav transcript.json --output features.json
+uv run prosody-markup normalize features.json --output assigned.json
+uv run prosody-markup assign assigned.json --format markdown
+```
+
+```text
+I said the *BLUE* one not the red one
+```
+
 Expected marked text:
 
 ```text
