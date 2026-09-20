@@ -31,7 +31,7 @@ def test_suppresses_untrusted_tokens(fixture_document):  # type: ignore[no-untyp
     assert "low_asr_confidence" in assigned.tokens[3].suppressed
 
 
-def test_density_cap_keeps_highest_confidence_tokens(fixture_document):  # type: ignore[no-untyped-def]
+def test_density_cap_breaks_prominence_ties_on_confidence(fixture_document):  # type: ignore[no-untyped-def]
     for token in fixture_document.tokens:
         if is_eligible(token):
             token.features["f0_z"] = 3.0
@@ -124,3 +124,30 @@ def test_min_marks_never_exceeds_eligible_tokens(fixture_document):  # type: ign
     assigned = assign_marks(fixture_document, load_legend())
 
     assert [token for token in assigned.tokens if token.marks] == []
+
+
+def test_density_cap_ranks_prominence_over_confidence(fixture_document):  # type: ignore[no-untyped-def]
+    """A strongly stressed token in noisier audio must beat a marginal one in clean audio."""
+    fixture_document.tokens = fixture_document.tokens[:10]
+    for token in fixture_document.tokens:
+        token.features.pop("f0_z", None)
+        token.features["pause_after"] = 0.0
+        token.feature_confidence.clear()
+
+    legend = load_legend()
+    eligible = [token for token in fixture_document.tokens if is_eligible(token)]
+    assert math.floor(len(eligible) * legend.density_cap) == 1
+
+    marginal = fixture_document.tokens[2]  # t03: barely over threshold, pristine confidence
+    marginal.features["f0_z"] = 2.05
+    marginal.feature_confidence["pitch"] = 0.99
+
+    strong = fixture_document.tokens[8]  # t09: strongly stressed, confidence just above the floor
+    strong.features["f0_z"] = 4.5
+    strong.feature_confidence["pitch"] = 0.86
+
+    assigned = assign_marks(fixture_document, legend)
+    marked_ids = [token.id for token in assigned.tokens if token.marks]
+
+    assert marked_ids == ["t09"]
+    assert "density_cap" in assigned.tokens[2].suppressed
