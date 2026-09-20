@@ -79,15 +79,14 @@ def _turn_keys(tokens: list[Token]) -> dict[int, tuple[str | None, str]]:
     return keys
 
 
-def _validate_document(document: Document) -> None:
-    if not document.baseline:
-        raise ValueError("Document baseline metadata is required")
-    window = document.baseline.get("window_s")
-    if not isinstance(window, (int, float)) or not math.isfinite(window) or window <= 0:
-        raise ValueError("baseline.window_s must be a positive finite number")
+def validate_tokens(tokens: list[Token]) -> None:
+    """Validate the token-level IR boundary: IDs, timestamps, and confidences.
 
+    Shared by assignment and by any stage that produces tokens, so producers
+    upstream of baseline normalization can check the same contract.
+    """
     seen_ids: set[str] = set()
-    for token in document.tokens:
+    for token in tokens:
         if not token.id or token.id in seen_ids:
             raise ValueError(f"Token IDs must be nonempty and unique: {token.id!r}")
         seen_ids.add(token.id)
@@ -109,6 +108,15 @@ def _validate_document(document: Document) -> None:
         for name, feature_value in token.features.items():
             if feature_value is not None and not math.isfinite(feature_value):
                 raise ValueError(f"Token {token.id} feature {name} must be finite")
+
+
+def _validate_document(document: Document) -> None:
+    if not document.baseline:
+        raise ValueError("Document baseline metadata is required")
+    window = document.baseline.get("window_s")
+    if not isinstance(window, (int, float)) or not math.isfinite(window) or window <= 0:
+        raise ValueError("baseline.window_s must be a positive finite number")
+    validate_tokens(document.tokens)
 
 
 def assign_marks(document: Document, legend: Legend) -> Document:

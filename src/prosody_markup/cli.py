@@ -11,6 +11,11 @@ from .audio import AudioError, inspect_wav, normalize_wav
 from .legend import load_legend
 from .models import Document
 from .render import RENDERERS
+from .transcribe import (
+    FasterWhisperAdapter,
+    TranscriptionError,
+    build_transcript,
+)
 
 
 def _load_document(path: Path) -> Document:
@@ -60,6 +65,16 @@ def _audio_normalize(args: argparse.Namespace) -> int:
     return 0
 
 
+def _transcribe(args: argparse.Namespace) -> int:
+    adapter = FasterWhisperAdapter(args.model, device=args.device, language=args.language)
+    document = build_transcript(args.input, adapter, speaker=args.speaker, turn_id=args.turn_id)
+    payload = json.dumps(document.to_dict(), indent=2, sort_keys=True) + "\n"
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(payload, encoding="utf-8")
+    print(f"wrote {len(document.tokens)} words to {args.output}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -88,6 +103,18 @@ def build_parser() -> argparse.ArgumentParser:
     audio_normalize_parser.add_argument("input", type=Path)
     audio_normalize_parser.add_argument("--output", type=Path, required=True)
     audio_normalize_parser.set_defaults(handler=_audio_normalize)
+
+    transcribe_parser = subparsers.add_parser(
+        "transcribe", help="Transcribe canonical audio into word-timestamp IR"
+    )
+    transcribe_parser.add_argument("input", type=Path)
+    transcribe_parser.add_argument("--output", type=Path, required=True)
+    transcribe_parser.add_argument("--speaker", required=True)
+    transcribe_parser.add_argument("--turn-id", dest="turn_id", default="turn-1")
+    transcribe_parser.add_argument("--model", default="base.en")
+    transcribe_parser.add_argument("--device", default="cpu")
+    transcribe_parser.add_argument("--language", default="en")
+    transcribe_parser.set_defaults(handler=_transcribe)
     return parser
 
 
@@ -95,7 +122,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except AudioError as exc:
+    except (AudioError, TranscriptionError) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 
