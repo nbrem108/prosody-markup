@@ -1,0 +1,82 @@
+# Prosody Markup Legend Specification
+
+**Specification version:** 0.1.0-draft
+**SPDX-License-Identifier:** CC-BY-4.0
+
+This document defines a rendering contract for measurable prosodic cues. It is intentionally
+small. Compatibility and reader acquisition are more important than covering every acoustic
+phenomenon.
+
+## Normative language
+
+The terms **MUST**, **MUST NOT**, **SHOULD**, and **MAY** are normative.
+
+## Tier 1 legend
+
+| Channel | Measured cue | Mark | Example |
+|---|---|---|---|
+| `pitch` | high-confidence perceived prominence, initially approximated by F0 deviation | emphasis/italics | `I *didn't* say that` |
+| `duration` | lengthened vowel or drawl relative to expected phoneme duration | letter doubling | `riiight` |
+| `timing` | hesitation pause after a token | ellipsis of 3–5 dots | `I mean... maybe` |
+
+A channel MUST map to exactly one semantic mark. A measured cue MUST NOT silently acquire an
+inferred emotional or intentional label.
+
+## Baselines
+
+- Features MUST be normalized per speaker and per session, never globally.
+- Implementations SHOULD use a rolling baseline and MUST record the normalization window.
+- Multi-speaker assignment MUST NOT proceed without speaker attribution.
+- Marks encode deviation from the speaker's own baseline, not an absolute human norm.
+
+## Suppression
+
+An implementation MUST suppress mark assignment when any of these are true:
+
+- ASR confidence is below the configured floor;
+- alignment confidence is below the configured floor;
+- speaker attribution is missing or uncertain;
+- speech overlaps another speaker;
+- the relevant acoustic feature is absent or invalid.
+
+Implementations SHOULD expose suppression reasons in the IR.
+
+## Density
+
+Marked-token density is calculated per speaker turn after punctuation restoration, excluding
+punctuation-only tokens. A token with one or more marks counts once. Tier 1 output MUST NOT mark
+more than 15% of eligible tokens in a turn. When candidates exceed the cap, retain the highest
+confidence candidates, with deterministic token-order tie breaking.
+
+## Rendering
+
+- Markdown renders `emphasis` with `*...*`.
+- HTML renders semantic `<em>` and data attributes for channel, confidence, and audio bounds.
+- Unicode/plain text preserves lexical text and uses `_..._` for emphasis.
+- Renderers MUST NOT visually encode confidence in version 0.1. Confidence is for filtering and
+  inspection, not a hidden additional mark channel.
+- Every user-facing interactive renderer MUST make the exact marked audio span available within
+  one action.
+
+## Duration realization
+
+A duration mark stores `strength` from 1–3. Renderers double the final vowel grapheme by that
+strength. If no vowel is available or the token is unsuitable for deterministic transformation,
+the renderer MUST preserve the original token and expose a rendering warning rather than invent
+spelling.
+
+## Timing realization
+
+A timing mark stores `strength` from 1–3 and renders 3, 4, or 5 dots respectively. This scale is
+experimental and must be validated before the draft reaches 1.0.
+
+## Versioning
+
+Every IR document MUST declare `schema_version` and `legend_version`. Rendered HTML and JSON MUST
+preserve both. Breaking changes to Tier 1 require a new major legend version and acquisition data
+showing why compatibility should be broken.
+
+## Reserved marks
+
+Bold and underline are permanently unassigned. Bold collides with author-to-reader importance;
+underline collides with hyperlinks. Tier 2 and inferred-state marks are outside this draft.

@@ -1,0 +1,24 @@
+schema_version: "0.1.0"
+legend_version: "tier1@0.1.0-draft"
+density_cap: 0.15
+channels:
+  pitch:
+    feature: f0_z
+    mark: emphasis
+    threshold: 2.0
+    confidence_floor: 0.85
+  duration:
+    feature: dur_z
+    mark: lengthening
+    threshold: 2.5
+    confidence_floor: 0.90
+  timing:
+    feature: pause_after
+    mark: hesitation
+    threshold: 0.35
+    confidence_floor: 0.90
+suppression:
+  asr_confidence_floor: 0.80
+  alignment_confidence_floor: 0.80
+  require_speaker: true
+  suppress_overlap: true
