@@ -20,6 +20,7 @@ class ChannelRule:
 class SuppressionPolicy:
     asr_confidence_floor: float
     alignment_confidence_floor: float
+    speaker_confidence_floor: float
     require_speaker: bool
     suppress_overlap: bool
 

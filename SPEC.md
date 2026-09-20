@@ -35,11 +35,15 @@ An implementation MUST suppress mark assignment when any of these are true:
 
 - ASR confidence is below the configured floor;
 - alignment confidence is below the configured floor;
-- speaker attribution is missing or uncertain;
+- speaker attribution is missing, lacks confidence, or falls below the configured confidence floor;
 - speech overlaps another speaker;
 - the relevant acoustic feature is absent or invalid.
 
 Implementations SHOULD expose suppression reasons in the IR.
+
+Implementations MUST reject non-finite features or timestamps, confidence values outside 0–1,
+invalid timestamp bounds, duplicate token IDs, and missing baseline-window metadata before mark
+assignment.
 
 ## Density
 

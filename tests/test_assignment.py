@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 
+import pytest
+
 from prosody_markup.assign import assign_marks, is_eligible
 from prosody_markup.legend import load_legend
 
@@ -75,3 +77,27 @@ def test_suppresses_lengthening_when_token_has_no_vowel(fixture_document):  # ty
 
     assert not any(mark.mark == "lengthening" for mark in assigned.tokens[0].marks)
     assert "unrenderable_lengthening" in assigned.tokens[0].suppressed
+
+
+def test_suppresses_uncertain_speaker_attribution(fixture_document):  # type: ignore[no-untyped-def]
+    token = fixture_document.tokens[3]
+    token.speaker_confidence = 0.2
+
+    assigned = assign_marks(fixture_document, load_legend())
+
+    assert assigned.tokens[3].marks == []
+    assert "low_speaker_confidence" in assigned.tokens[3].suppressed
+
+
+def test_rejects_nonfinite_features(fixture_document):  # type: ignore[no-untyped-def]
+    fixture_document.tokens[3].features["f0_z"] = float("inf")
+
+    with pytest.raises(ValueError, match="must be finite"):
+        assign_marks(fixture_document, load_legend())
+
+
+def test_rejects_duplicate_token_ids(fixture_document):  # type: ignore[no-untyped-def]
+    fixture_document.tokens[1].id = fixture_document.tokens[0].id
+
+    with pytest.raises(ValueError, match="nonempty and unique"):
+        assign_marks(fixture_document, load_legend())

@@ -33,6 +33,13 @@ def suppression_reasons(token: Token, legend: Legend) -> list[str]:
         reasons.append("low_alignment_confidence")
     if policy.require_speaker and not token.speaker:
         reasons.append("missing_speaker")
+    if policy.require_speaker and token.speaker_confidence is None:
+        reasons.append("missing_speaker_confidence")
+    elif (
+        token.speaker_confidence is not None
+        and token.speaker_confidence < policy.speaker_confidence_floor
+    ):
+        reasons.append("low_speaker_confidence")
     if policy.suppress_overlap and token.overlap:
         reasons.append("overlapping_speech")
     return reasons
@@ -60,11 +67,44 @@ def _turn_keys(tokens: list[Token]) -> dict[int, tuple[str | None, str]]:
     return keys
 
 
+def _validate_document(document: Document) -> None:
+    if not document.baseline:
+        raise ValueError("Document baseline metadata is required")
+    window = document.baseline.get("window_s")
+    if not isinstance(window, (int, float)) or not math.isfinite(window) or window <= 0:
+        raise ValueError("baseline.window_s must be a positive finite number")
+
+    seen_ids: set[str] = set()
+    for token in document.tokens:
+        if not token.id or token.id in seen_ids:
+            raise ValueError(f"Token IDs must be nonempty and unique: {token.id!r}")
+        seen_ids.add(token.id)
+        if not math.isfinite(token.start) or not math.isfinite(token.end):
+            raise ValueError(f"Token {token.id} timestamps must be finite")
+        if token.start < 0 or token.end < token.start:
+            raise ValueError(f"Token {token.id} has invalid timestamp bounds")
+        confidences = {
+            "asr_confidence": token.asr_confidence,
+            "alignment_confidence": token.alignment_confidence,
+            **token.feature_confidence,
+        }
+        speaker_confidence = token.speaker_confidence
+        if speaker_confidence is not None:
+            confidences["speaker_confidence"] = float(speaker_confidence)
+        for name, value in confidences.items():
+            if not math.isfinite(value) or not 0 <= value <= 1:
+                raise ValueError(f"Token {token.id} {name} must be finite and between 0 and 1")
+        for name, feature_value in token.features.items():
+            if feature_value is not None and not math.isfinite(feature_value):
+                raise ValueError(f"Token {token.id} feature {name} must be finite")
+
+
 def assign_marks(document: Document, legend: Legend) -> Document:
     if document.schema_version != legend.schema_version:
         raise ValueError(
             f"Schema mismatch: document={document.schema_version}, legend={legend.schema_version}"
         )
+    _validate_document(document)
 
     candidates: list[Candidate] = []
     turn_keys = _turn_keys(document.tokens)

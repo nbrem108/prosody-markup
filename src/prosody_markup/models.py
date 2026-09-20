@@ -22,6 +22,7 @@ class Token:
     asr_confidence: float
     alignment_confidence: float
     turn_id: str | None = None
+    speaker_confidence: float | None = None
     space_before: bool | None = None
     features: dict[str, float | None] = field(default_factory=dict)
     feature_confidence: dict[str, float] = field(default_factory=dict)

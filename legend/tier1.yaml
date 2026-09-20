@@ -20,5 +20,6 @@ channels:
 suppression:
   asr_confidence_floor: 0.80
   alignment_confidence_floor: 0.80
+  speaker_confidence_floor: 0.80
   require_speaker: true
   suppress_overlap: true

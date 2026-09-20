@@ -8,7 +8,8 @@ version = "0.1.0.dev0"
 description = "An open, testable convention for rendering measurable prosody in text"
 readme = "README.md"
 requires-python = ">=3.11"
-license = { text = "Apache-2.0" }
+license = "Apache-2.0"
+license-files = ["LICENSE", "LICENSES/*.txt"]
 authors = [{ name = "Prosody Markup contributors" }]
 keywords = ["prosody", "speech", "transcription", "accessibility", "linguistics"]
 classifiers = [

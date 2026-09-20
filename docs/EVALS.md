@@ -43,5 +43,7 @@ implicit. Production failures promoted into fixtures retain license and consent 
 
 ## Minimum eval fixture
 
-Each fixture contains audio provenance, transcript, word timing, speaker labels, model provenance,
-raw and normalized features, human labels, expected marks, rendered snapshots, and known caveats.
+Each real-audio eval fixture should contain audio provenance, transcript, word timing, speaker
+labels and confidence, model provenance, raw and normalized features, human labels, expected marks,
+rendered snapshots, and known caveats. The current synthetic contract fixture begins at normalized
+features and is explicitly labeled as such.

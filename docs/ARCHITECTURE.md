@@ -35,7 +35,7 @@ Every document carries:
 - audio provenance without requiring a public URI;
 - ASR and alignment provenance;
 - speaker/session baseline metadata;
-- tokens with stable IDs, time bounds, original spacing, raw/normalized features, and confidence;
+- tokens with stable IDs, time bounds, original spacing, normalized-feature values, and confidence;
 - assigned marks and suppression reasons;
 - optional non-speech events.
 
@@ -44,3 +44,7 @@ Every document carries:
 A future real-audio run should be able to emit transcript JSON, feature tables, pitch and energy
 contours, pause map, mark candidates, final marks, and rendered output. Debug output is local and
 must not silently upload audio.
+
+The draft IR currently keeps normalized features in a typed numeric map and baseline/model details
+in versioned metadata dictionaries. Explicit raw-feature structures are deferred until the first
+real-audio adapter proves which measurements and provenance fields must be stable.
