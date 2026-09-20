@@ -29,6 +29,7 @@ class Token:
     overlap: bool = False
     marks: list[Mark] = field(default_factory=list)
     suppressed: list[str] = field(default_factory=list)
+    density_floor_retained: bool = False
 
 
 @dataclass(slots=True)

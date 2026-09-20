@@ -25,7 +25,8 @@ agreement, and at least 85% precision for public prominence marks.
 - Multi-speaker diarization and per-speaker baselines.
 - Audio-event passthrough and WebVTT.
 - Discrimination harness and reading-friction tests.
-- Density remains below the cap on at least 90% of conversational turns without clipping.
+- Density remains below the cap on at least 90% of conversational turns without clipping,
+  counting turns retained under the short-turn floor separately.
 
 ## v0.4 — Is it acquired?
 

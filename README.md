@@ -50,6 +50,20 @@ whether conversion to the pipeline's canonical mono 16 kHz signed 16-bit PCM for
 It never mutates the source file. Inspection is bounded to WAV files of at most 256 MiB and streams
 decoded sample metrics in chunks from one immutable input snapshot.
 
+Convert source audio to that canonical format:
+
+```bash
+uv run prosody-markup audio normalize input.wav --output normalized.wav
+```
+
+Channel mixing averages channels and resampling uses a deterministic rational polyphase
+Blackman-windowed sinc filter, so repeated runs are byte-identical and decimation does not fold
+energy above 8 kHz back into the band the pitch extractor reads. Audio that is already mono 16 kHz
+signed 16-bit PCM keeps its samples unchanged. Clipped, empty, or over-long input fails closed
+rather than producing degraded audio; normalization runs in pure Python and is therefore limited to
+10 minutes of audio. Conversion parameters, the source checksum, and the output checksum are
+written to a `<output>.manifest.json` sidecar.
+
 Expected marked text:
 
 ```text

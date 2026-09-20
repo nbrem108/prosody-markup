@@ -129,6 +129,7 @@ def assign_marks(document: Document, legend: Legend) -> Document:
     for index, token in enumerate(document.tokens):
         token.marks.clear()
         token.suppressed = suppression_reasons(token, legend)
+        token.density_floor_retained = False
         if token.suppressed or not is_eligible(token):
             continue
         for channel, rule in legend.channels.items():
@@ -160,12 +161,13 @@ def assign_marks(document: Document, legend: Legend) -> Document:
         candidates_by_turn.setdefault(turn_keys[index], []).append(index)
 
     retained: set[int] = set()
+    floor_retained: set[int] = set()
     for key, token_indexes in candidates_by_turn.items():
         eligible_count = eligible_by_turn[key]
         allowed = math.floor(eligible_count * legend.density_cap)
         # A turn short enough to floor to zero would never carry a mark, which
         # silently strips most conversational speech. Guarantee a minimum.
-        allowed = min(eligible_count, max(allowed, legend.min_marks_per_turn))
+        floored = min(eligible_count, max(allowed, legend.min_marks_per_turn))
         ranked_tokens = sorted(
             token_indexes,
             key=lambda index: (
@@ -174,13 +176,19 @@ def assign_marks(document: Document, legend: Legend) -> Document:
                 index,
             ),
         )
-        retained.update(ranked_tokens[:allowed])
+        kept = ranked_tokens[:floored]
+        retained.update(kept)
+        # These marks exceed the cap and survive only under the short-turn floor.
+        # SPEC requires them to stay identifiable so evaluation can report
+        # precision both with and without them.
+        floor_retained.update(kept[allowed:])
 
     for index, items in candidate_tokens.items():
         token = document.tokens[index]
         if index not in retained:
             token.suppressed.append("density_cap")
             continue
+        token.density_floor_retained = index in floor_retained
         for item in sorted(items, key=lambda candidate: candidate.channel):
             token.marks.append(
                 Mark(

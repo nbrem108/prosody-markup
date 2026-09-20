@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from .assign import assign_marks, is_eligible
-from .audio import AudioInspectionError, inspect_wav
+from .audio import AudioError, inspect_wav, normalize_wav
 from .legend import load_legend
 from .models import Document
 from .render import RENDERERS
@@ -51,6 +51,15 @@ def _audio_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audio_normalize(args: argparse.Namespace) -> int:
+    manifest = normalize_wav(args.input, args.output)
+    payload = manifest.to_dict()
+    sidecar = Path(manifest.output_path + ".manifest.json")
+    sidecar.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps(payload, indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -72,6 +81,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     audio_inspect_parser.add_argument("input", type=Path)
     audio_inspect_parser.set_defaults(handler=_audio_inspect)
+
+    audio_normalize_parser = audio_subparsers.add_parser(
+        "normalize", help="Convert a PCM WAV to canonical mono 16 kHz 16-bit PCM"
+    )
+    audio_normalize_parser.add_argument("input", type=Path)
+    audio_normalize_parser.add_argument("--output", type=Path, required=True)
+    audio_normalize_parser.set_defaults(handler=_audio_normalize)
     return parser
 
 
@@ -79,7 +95,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except AudioInspectionError as exc:
+    except AudioError as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 

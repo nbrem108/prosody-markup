@@ -50,17 +50,35 @@ assignment.
 Marked-token density is calculated per speaker turn after punctuation restoration, excluding
 punctuation-only tokens. Implementations SHOULD supply a stable `turn_id`; when absent, the
 reference implementation infers turns from contiguous speaker spans. A token with one or more
-marks counts once. Tier 1 output MUST NOT mark more than 15% of eligible tokens in a turn. When
-candidates exceed the cap, retain the candidates with the greatest prominence, where prominence
-is the feature value's relative excess over its channel threshold, `(value - threshold) /
-abs(threshold)`. Confidence gates assignment through `confidence_floor`; it MUST NOT be reused as
+marks counts once.
+
+A turn's mark allowance is `floor(eligible_tokens * density_cap)`, where Tier 1 sets `density_cap`
+to 0.15. Tier 1 output MUST NOT exceed that allowance except under the short-turn floor defined
+below.
+
+When candidates exceed the allowance, retain the candidates with the greatest prominence, where
+prominence is the feature value's relative excess over its channel threshold, `(value - threshold)
+/ abs(threshold)`. Confidence gates assignment through `confidence_floor`; it MUST NOT be reused as
 the ranking signal, because a barely-suprathreshold token in clean audio would otherwise outrank a
 strongly marked token in noisier audio. Ties break on confidence, then on token order.
 
-A turn short enough that the cap floors to zero MUST still be allowed at least
-`min_marks_per_turn` marks when at least one candidate survives suppression. Most
+### Short-turn floor
+
+A turn whose allowance floors to zero MUST still be allowed up to `min_marks_per_turn` marks when
+at least one candidate survives suppression, bounded by the turn's eligible token count. Most
 conversational turns are short; flooring them to zero removes the marks readers need for
-acquisition. Implementations MUST NOT exceed the eligible token count for the turn.
+acquisition.
+
+This floor is a deliberate and bounded exception to the cap, not a second cap. A turn retained
+under it MAY exceed `density_cap`: a four-token turn carrying one mark sits at 25%. The exception
+cannot fabricate a mark, because it only ever retains a candidate that already cleared its channel
+threshold and `confidence_floor`; it changes how many survivors are kept, never whether a candidate
+existed.
+
+Because the floor raises mark coverage on exactly the shortest and least certain turns,
+implementations MUST mark which tokens were retained only under it, and evaluation MUST report
+precision both with and without those tokens. Tier 1 sets `min_marks_per_turn` to 1; a higher
+value is outside the Tier 1 contract.
 
 ## Rendering
 
