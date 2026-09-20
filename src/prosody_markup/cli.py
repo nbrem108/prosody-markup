@@ -8,6 +8,7 @@ from typing import Any
 
 from .assign import assign_marks, is_eligible
 from .audio import AudioError, inspect_wav, normalize_wav
+from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
 from .render import RENDERERS
@@ -75,6 +76,25 @@ def _transcribe(args: argparse.Namespace) -> int:
     return 0
 
 
+def _extract(args: argparse.Namespace) -> int:
+    document = _load_document(args.transcript)
+    settings = PitchSettings(
+        floor_hz=args.pitch_floor,
+        ceiling_hz=args.pitch_ceiling,
+    )
+    extraction = extract_pitch(document, args.input, settings)
+    payload = json.dumps(extraction.document.to_dict(), indent=2, sort_keys=True) + "\n"
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(payload, encoding="utf-8")
+
+    measured = sum(1 for word in extraction.words if word.valid)
+    print(f"measured {measured}/{len(extraction.words)} eligible words -> {args.output}")
+    if args.debug_dir:
+        for path in write_debug_artifacts(extraction, args.debug_dir):
+            print(f"wrote {path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -115,6 +135,17 @@ def build_parser() -> argparse.ArgumentParser:
     transcribe_parser.add_argument("--device", default="cpu")
     transcribe_parser.add_argument("--language", default="en")
     transcribe_parser.set_defaults(handler=_transcribe)
+
+    extract_parser = subparsers.add_parser(
+        "extract", help="Measure per-word pitch features from canonical audio"
+    )
+    extract_parser.add_argument("input", type=Path)
+    extract_parser.add_argument("transcript", type=Path)
+    extract_parser.add_argument("--output", type=Path, required=True)
+    extract_parser.add_argument("--debug-dir", dest="debug_dir", type=Path)
+    extract_parser.add_argument("--pitch-floor", dest="pitch_floor", type=float, default=75.0)
+    extract_parser.add_argument("--pitch-ceiling", dest="pitch_ceiling", type=float, default=500.0)
+    extract_parser.set_defaults(handler=_extract)
     return parser
 
 
@@ -122,7 +153,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except (AudioError, TranscriptionError) as exc:
+    except (AudioError, TranscriptionError, ExtractionError) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 

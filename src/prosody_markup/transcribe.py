@@ -5,15 +5,17 @@ from pathlib import Path
 from typing import Protocol
 
 from .assign import validate_tokens
-from .audio import TARGET_SAMPLE_RATE, inspect_wav
+from .audio import inspect_wav
 from .models import Document, Token
 
 SCHEMA_VERSION = "0.1.0"
 TRANSCRIPT_LEGEND_VERSION = "unassigned"
 
 # Word boundaries are compared against a duration derived from an integer frame
-# count, so allow a sample-scale tolerance rather than demanding exact equality.
-_BOUNDS_TOLERANCE_S = 1.0 / TARGET_SAMPLE_RATE
+# count. Engines commonly round timestamps to milliseconds, so a sample-scale
+# tolerance would reject a final word that merely rounds up to the recording
+# end. This stays far below any real word, so it cannot mask a wrong transcript.
+_BOUNDS_TOLERANCE_S = 0.005
 
 
 class TranscriptionError(ValueError):

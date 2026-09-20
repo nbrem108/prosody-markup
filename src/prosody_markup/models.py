@@ -26,6 +26,8 @@ class Token:
     space_before: bool | None = None
     features: dict[str, float | None] = field(default_factory=dict)
     feature_confidence: dict[str, float] = field(default_factory=dict)
+    raw_features: dict[str, float | None] = field(default_factory=dict)
+    feature_suppression: dict[str, str] = field(default_factory=dict)
     overlap: bool = False
     marks: list[Mark] = field(default_factory=list)
     suppressed: list[str] = field(default_factory=list)
