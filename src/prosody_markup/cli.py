@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 from .assign import assign_marks, is_eligible
+from .audio import AudioInspectionError, inspect_wav
 from .legend import load_legend
 from .models import Document
 from .render import RENDERERS
@@ -43,6 +45,12 @@ def _inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _audio_inspect(args: argparse.Namespace) -> int:
+    inspection = inspect_wav(args.input)
+    print(json.dumps(inspection.to_dict(), indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -56,12 +64,24 @@ def build_parser() -> argparse.ArgumentParser:
     inspect_parser = subparsers.add_parser("inspect", help="Inspect an IR document")
     inspect_parser.add_argument("input", type=Path)
     inspect_parser.set_defaults(handler=_inspect)
+
+    audio_parser = subparsers.add_parser("audio", help="Inspect and prepare local audio")
+    audio_subparsers = audio_parser.add_subparsers(dest="audio_command", required=True)
+    audio_inspect_parser = audio_subparsers.add_parser(
+        "inspect", help="Inspect a PCM WAV without modifying it"
+    )
+    audio_inspect_parser.add_argument("input", type=Path)
+    audio_inspect_parser.set_defaults(handler=_audio_inspect)
     return parser
 
 
 def main() -> int:
     args = build_parser().parse_args()
-    return int(args.handler(args))
+    try:
+        return int(args.handler(args))
+    except AudioInspectionError as exc:
+        print(f"prosody-markup: error: {exc}", file=sys.stderr)
+        return 2
 
 
 if __name__ == "__main__":
