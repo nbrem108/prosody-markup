@@ -35,7 +35,7 @@ Every document carries:
 - audio provenance without requiring a public URI;
 - ASR and alignment provenance;
 - speaker/session baseline metadata;
-- tokens with stable IDs, time bounds, raw/normalized features, and confidence;
+- tokens with stable IDs, time bounds, original spacing, raw/normalized features, and confidence;
 - assigned marks and suppression reasons;
 - optional non-speech events.
 

@@ -44,9 +44,11 @@ Implementations SHOULD expose suppression reasons in the IR.
 ## Density
 
 Marked-token density is calculated per speaker turn after punctuation restoration, excluding
-punctuation-only tokens. A token with one or more marks counts once. Tier 1 output MUST NOT mark
-more than 15% of eligible tokens in a turn. When candidates exceed the cap, retain the highest
-confidence candidates, with deterministic token-order tie breaking.
+punctuation-only tokens. Implementations SHOULD supply a stable `turn_id`; when absent, the
+reference implementation infers turns from contiguous speaker spans. A token with one or more
+marks counts once. Tier 1 output MUST NOT mark more than 15% of eligible tokens in a turn. When
+candidates exceed the cap, retain the highest-confidence candidates, with deterministic
+token-order tie breaking.
 
 ## Rendering
 
@@ -62,7 +64,7 @@ confidence candidates, with deterministic token-order tie breaking.
 
 A duration mark stores `strength` from 1–3. Renderers double the final vowel grapheme by that
 strength. If no vowel is available or the token is unsuitable for deterministic transformation,
-the renderer MUST preserve the original token and expose a rendering warning rather than invent
+assignment MUST suppress the mark with an `unrenderable_lengthening` reason rather than invent
 spelling.
 
 ## Timing realization

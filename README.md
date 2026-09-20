@@ -42,7 +42,7 @@ uv run pytest
 Expected marked text:
 
 ```text
-No, I *got* it. It is fine. I will just redo the whole deck before the morning review with the team tonight.....
+No, I *got* it. It is fine. I will just redo the whole deck before the morning review with the team tonight....
 ```
 
 ## Repository map

@@ -9,7 +9,7 @@ def test_markdown_fixture(fixture_document):  # type: ignore[no-untyped-def]
     assigned = assign_marks(fixture_document, load_legend())
     assert render_markdown(assigned) == (
         "No, I *got* it. It is fine. I will just redo the whole deck before the morning review "
-        "with the team tonight....."
+        "with the team tonight...."
     )
 
 
@@ -27,3 +27,10 @@ def test_unicode_fallback_is_distinct(fixture_document):  # type: ignore[no-unty
     rendered = render_unicode(assigned)
     assert "_got_" in rendered
     assert "*got*" not in rendered
+
+
+def test_explicit_spacing_provenance_overrides_renderer_heuristics(fixture_document):  # type: ignore[no-untyped-def]
+    fixture_document.tokens[3].space_before = False
+    assigned = assign_marks(fixture_document, load_legend())
+
+    assert "I*got* it" in render_markdown(assigned)

@@ -30,11 +30,14 @@ def _apply_lexical_marks(token: Token) -> str:
     return text
 
 
-def _join(parts: list[tuple[str, str]]) -> str:
+def _join(parts: list[tuple[str, str, bool | None]]) -> str:
     output = ""
     previous_raw = ""
-    for rendered, raw in parts:
-        if not output or raw in _NO_SPACE_BEFORE or previous_raw in _NO_SPACE_AFTER:
+    for rendered, raw, space_before in parts:
+        use_heuristic_no_space = space_before is None and (
+            raw in _NO_SPACE_BEFORE or previous_raw in _NO_SPACE_AFTER
+        )
+        if not output or space_before is False or use_heuristic_no_space:
             output += rendered
         else:
             output += " " + rendered
@@ -43,22 +46,26 @@ def _join(parts: list[tuple[str, str]]) -> str:
 
 
 def render_markdown(document: Document) -> str:
-    parts: list[tuple[str, str]] = []
-    for token in document.tokens:
+    parts: list[tuple[str, str, bool | None]] = []
+    for index, token in enumerate(document.tokens):
+        if _is_redundant_period(document, index):
+            continue
         text = _apply_lexical_marks(token)
         if any(mark.mark == "emphasis" for mark in token.marks):
             text = f"*{text}*"
-        parts.append((text, token.text))
+        parts.append((text, token.text, token.space_before))
     return _join(parts)
 
 
 def render_unicode(document: Document) -> str:
-    parts: list[tuple[str, str]] = []
-    for token in document.tokens:
+    parts: list[tuple[str, str, bool | None]] = []
+    for index, token in enumerate(document.tokens):
+        if _is_redundant_period(document, index):
+            continue
         text = _apply_lexical_marks(token)
         if any(mark.mark == "emphasis" for mark in token.marks):
             text = f"_{text}_"
-        parts.append((text, token.text))
+        parts.append((text, token.text, token.space_before))
     return _join(parts)
 
 
@@ -68,9 +75,17 @@ def _mark_data(marks: list[Mark]) -> tuple[str, str]:
     return channels, f"{confidence:.3f}"
 
 
+def _is_redundant_period(document: Document, index: int) -> bool:
+    if index == 0 or document.tokens[index].text != ".":
+        return False
+    return any(mark.mark == "hesitation" for mark in document.tokens[index - 1].marks)
+
+
 def render_html(document: Document) -> str:
-    parts: list[tuple[str, str]] = []
-    for token in document.tokens:
+    parts: list[tuple[str, str, bool | None]] = []
+    for index, token in enumerate(document.tokens):
+        if _is_redundant_period(document, index):
+            continue
         text = html.escape(_apply_lexical_marks(token))
         if token.marks:
             channels, confidence = _mark_data(token.marks)
@@ -84,7 +99,7 @@ def render_html(document: Document) -> str:
                 text = f"<em {attrs}>{text}</em>"
             else:
                 text = f"<span {attrs}>{text}</span>"
-        parts.append((text, token.text))
+        parts.append((text, token.text, token.space_before))
     body = _join(parts)
     return (
         f'<article data-schema-version="{html.escape(document.schema_version)}" '
