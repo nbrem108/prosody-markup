@@ -11,7 +11,13 @@ from pathlib import Path
 
 import pytest
 
-from prosody_markup.audio import MAX_WAV_BYTES, AudioInspectionError, inspect_wav
+from prosody_markup.audio import (
+    MAX_WAV_BYTES,
+    AudioInspectionError,
+    AudioNormalizationError,
+    inspect_wav,
+    normalize_wav,
+)
 
 
 def _write_wav(
@@ -22,10 +28,11 @@ def _write_wav(
     sample_width: int = 2,
     duration_s: float = 0.1,
     amplitude: float = 0.5,
+    frequency: float = 220.0,
 ) -> None:
     frame_count = int(sample_rate * duration_s)
     samples = [
-        int(math.sin(2 * math.pi * 220 * index / sample_rate) * amplitude * 32767)
+        int(math.sin(2 * math.pi * frequency * index / sample_rate) * amplitude * 32767)
         for index in range(frame_count)
     ]
     frames = b"".join(
@@ -157,3 +164,182 @@ def test_audio_inspect_cli_reports_invalid_input_without_traceback(tmp_path: Pat
     assert completed.returncode == 2
     assert "valid PCM WAV" in completed.stderr
     assert "Traceback" not in completed.stderr
+
+
+def _read_samples(path: Path) -> list[int]:
+    with wave.open(str(path), "rb") as stream:
+        frames = stream.readframes(stream.getnframes())
+    return [value[0] for value in struct.iter_unpack("<h", frames)]
+
+
+def _steady_state_rms(samples: list[int]) -> float:
+    """RMS of the middle half, which excludes linear-phase filter edge ringing."""
+    window = samples[len(samples) // 4 : 3 * len(samples) // 4]
+    return math.sqrt(sum(value * value for value in window) / len(window))
+
+
+def test_normalize_converts_to_canonical_format(tmp_path: Path) -> None:
+    source = tmp_path / "stereo.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, sample_rate=44_100, channels=2, duration_s=0.25)
+
+    manifest = normalize_wav(source, output)
+
+    assert manifest.schema_version == "audio-normalization@0.1.0"
+    assert manifest.output_sample_rate == 16_000
+    assert manifest.output_channels == 1
+    assert manifest.output_sample_width_bits == 16
+    assert manifest.output_frame_count == 4_000
+    assert manifest.output_duration_s == pytest.approx(0.25)
+    assert manifest.samples_modified is True
+    assert manifest.channel_mix == "mean"
+    assert manifest.resampler == "polyphase-blackman-sinc"
+    assert manifest.resample_ratio == "160/441"
+
+    with wave.open(str(output), "rb") as stream:
+        assert stream.getnchannels() == 1
+        assert stream.getframerate() == 16_000
+        assert stream.getsampwidth() == 2
+
+
+def test_normalize_records_source_provenance(tmp_path: Path) -> None:
+    source = tmp_path / "stereo.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, sample_rate=44_100, channels=2, duration_s=0.1)
+
+    manifest = normalize_wav(source, output)
+
+    assert manifest.source_sha256 == hashlib.sha256(source.read_bytes()).hexdigest()
+    assert manifest.output_sha256 == hashlib.sha256(output.read_bytes()).hexdigest()
+    assert manifest.source_sample_rate == 44_100
+    assert manifest.source_channels == 2
+
+
+def test_normalize_is_deterministic(tmp_path: Path) -> None:
+    source = tmp_path / "stereo.wav"
+    _write_wav(source, sample_rate=44_100, channels=2, duration_s=0.1)
+
+    first = normalize_wav(source, tmp_path / "first.wav")
+    second = normalize_wav(source, tmp_path / "second.wav")
+
+    assert first.output_sha256 == second.output_sha256
+
+
+def test_normalize_passes_through_canonical_audio_without_quality_loss(tmp_path: Path) -> None:
+    source = tmp_path / "canonical.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, duration_s=0.1)
+
+    manifest = normalize_wav(source, output)
+
+    assert manifest.samples_modified is False
+    assert manifest.resampler == "none"
+    assert manifest.channel_mix == "identity"
+    assert _read_samples(output) == _read_samples(source)
+
+
+def test_normalize_preserves_a_tone_below_the_target_nyquist(tmp_path: Path) -> None:
+    source = tmp_path / "tone.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, sample_rate=44_100, duration_s=0.25, frequency=1_000.0, amplitude=0.5)
+
+    normalize_wav(source, output)
+
+    expected_rms = 0.5 * 32767 / math.sqrt(2)
+    assert _steady_state_rms(_read_samples(output)) == pytest.approx(expected_rms, rel=0.05)
+
+
+def test_normalize_attenuates_content_above_the_target_nyquist(tmp_path: Path) -> None:
+    """Decimation must not fold 15 kHz energy back into the pitch band."""
+    source = tmp_path / "ultrasonic.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, sample_rate=44_100, duration_s=0.25, frequency=15_000.0, amplitude=0.5)
+
+    normalize_wav(source, output)
+
+    input_rms = 0.5 * 32767 / math.sqrt(2)
+    assert _steady_state_rms(_read_samples(output)) < input_rms / 1_000
+
+
+def test_normalize_rejects_clipped_input(tmp_path: Path) -> None:
+    source = tmp_path / "clipped.wav"
+    _write_wav(source, amplitude=1.0)
+
+    with pytest.raises(AudioNormalizationError, match="clipped"):
+        normalize_wav(source, tmp_path / "normalized.wav")
+
+
+def test_normalize_rejects_empty_input(tmp_path: Path) -> None:
+    source = tmp_path / "empty.wav"
+    with wave.open(str(source), "wb") as target:
+        target.setnchannels(1)
+        target.setsampwidth(2)
+        target.setframerate(16_000)
+
+    with pytest.raises(AudioInspectionError, match="contains no audio frames"):
+        normalize_wav(source, tmp_path / "normalized.wav")
+
+
+def test_normalize_refuses_to_overwrite_its_source(tmp_path: Path) -> None:
+    source = tmp_path / "canonical.wav"
+    _write_wav(source)
+
+    with pytest.raises(AudioNormalizationError, match="must differ from the source"):
+        normalize_wav(source, source)
+
+
+def test_audio_normalize_cli_writes_audio_and_sidecar_manifest(tmp_path: Path) -> None:
+    source = tmp_path / "stereo.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, sample_rate=44_100, channels=2, duration_s=0.1)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "audio",
+            "normalize",
+            str(source),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["output_sample_rate"] == 16_000
+
+    sidecar = Path(str(output) + ".manifest.json")
+    assert json.loads(sidecar.read_text(encoding="utf-8")) == payload
+    assert inspect_wav(output).conversion_required is False
+
+
+def test_audio_normalize_cli_reports_clipped_input_without_traceback(tmp_path: Path) -> None:
+    source = tmp_path / "clipped.wav"
+    output = tmp_path / "normalized.wav"
+    _write_wav(source, amplitude=1.0)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "audio",
+            "normalize",
+            str(source),
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "clipped" in completed.stderr
+    assert "Traceback" not in completed.stderr
+    assert not output.exists()
