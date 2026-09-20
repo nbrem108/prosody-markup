@@ -101,3 +101,26 @@ def test_rejects_duplicate_token_ids(fixture_document):  # type: ignore[no-untyp
 
     with pytest.raises(ValueError, match="nonempty and unique"):
         assign_marks(fixture_document, load_legend())
+
+
+def test_short_turn_still_receives_a_mark(fixture_document):  # type: ignore[no-untyped-def]
+    """A turn whose density cap floors to zero must not lose every mark."""
+    fixture_document.tokens = fixture_document.tokens[:6]
+
+    legend = load_legend()
+    eligible = [token for token in fixture_document.tokens if is_eligible(token)]
+    assert math.floor(len(eligible) * legend.density_cap) == 0
+
+    assigned = assign_marks(fixture_document, legend)
+    marked = [token for token in assigned.tokens if token.marks]
+
+    assert [token.id for token in marked] == ["t04"]
+    assert not any("density_cap" in token.suppressed for token in assigned.tokens)
+
+
+def test_min_marks_never_exceeds_eligible_tokens(fixture_document):  # type: ignore[no-untyped-def]
+    fixture_document.tokens = fixture_document.tokens[1:2]  # a single comma, nothing eligible
+
+    assigned = assign_marks(fixture_document, load_legend())
+
+    assert [token for token in assigned.tokens if token.marks] == []

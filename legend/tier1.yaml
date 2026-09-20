@@ -1,6 +1,7 @@
 schema_version: "0.1.0"
 legend_version: "tier1@0.1.0-draft"
 density_cap: 0.15
+min_marks_per_turn: 1
 channels:
   pitch:
     feature: f0_z

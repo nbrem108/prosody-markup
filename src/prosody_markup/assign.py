@@ -148,7 +148,11 @@ def assign_marks(document: Document, legend: Legend) -> Document:
 
     retained: set[int] = set()
     for key, token_indexes in candidates_by_turn.items():
-        allowed = math.floor(eligible_by_turn[key] * legend.density_cap)
+        eligible_count = eligible_by_turn[key]
+        allowed = math.floor(eligible_count * legend.density_cap)
+        # A turn short enough to floor to zero would never carry a mark, which
+        # silently strips most conversational speech. Guarantee a minimum.
+        allowed = min(eligible_count, max(allowed, legend.min_marks_per_turn))
         ranked_tokens = sorted(
             token_indexes,
             key=lambda index: (-max(item.confidence for item in candidate_tokens[index]), index),

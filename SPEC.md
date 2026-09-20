@@ -54,6 +54,11 @@ marks counts once. Tier 1 output MUST NOT mark more than 15% of eligible tokens 
 candidates exceed the cap, retain the highest-confidence candidates, with deterministic
 token-order tie breaking.
 
+A turn short enough that the cap floors to zero MUST still be allowed at least
+`min_marks_per_turn` marks when at least one candidate survives suppression. Most
+conversational turns are short; flooring them to zero removes the marks readers need for
+acquisition. Implementations MUST NOT exceed the eligible token count for the turn.
+
 ## Rendering
 
 - Markdown renders `emphasis` with `*...*`.

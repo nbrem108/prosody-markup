@@ -30,6 +30,7 @@ class Legend:
     schema_version: str
     legend_version: str
     density_cap: float
+    min_marks_per_turn: int
     channels: dict[str, ChannelRule]
     suppression: SuppressionPolicy
 
@@ -39,6 +40,7 @@ class Legend:
             schema_version=str(raw["schema_version"]),
             legend_version=str(raw["legend_version"]),
             density_cap=float(raw["density_cap"]),
+            min_marks_per_turn=int(raw.get("min_marks_per_turn", 1)),
             channels={name: ChannelRule(**rule) for name, rule in raw["channels"].items()},
             suppression=SuppressionPolicy(**raw["suppression"]),
         )
