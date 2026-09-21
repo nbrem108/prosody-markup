@@ -197,7 +197,7 @@ class FasterWhisperAdapter:
             import faster_whisper
         except ImportError as exc:  # pragma: no cover - exercised without the extra installed
             raise TranscriptionError(
-                "faster-whisper is not installed; install it locally to transcribe real audio"
+                "faster-whisper is not installed; run 'uv sync --extra asr' to add it"
             ) from exc
 
         model = faster_whisper.WhisperModel(

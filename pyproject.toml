@@ -19,9 +19,18 @@ classifiers = [
   "Programming Language :: Python :: 3.12",
   "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = ["PyYAML>=6.0,<7", "praat-parselmouth>=0.4,<0.5"]
+dependencies = [
+  "PyYAML>=6.0,<7",
+  # Used directly by audio normalization and pitch extraction, so declared
+  # rather than relied on as a transitive dependency of parselmouth.
+  "numpy>=1.26,<3",
+  "praat-parselmouth>=0.4,<0.5",
+]
 
 [project.optional-dependencies]
+# Local ASR. Kept optional because it pulls a large native runtime and needs a
+# model download, neither of which the package, its tests, or CI require.
+asr = ["faster-whisper>=1.0,<2"]
 dev = [
   "build>=1.2,<2",
   "mypy>=1.11,<2",

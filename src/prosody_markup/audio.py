@@ -9,6 +9,8 @@ from collections.abc import Iterator
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+import numpy as np
+
 MAX_WAV_BYTES = 256 * 1024 * 1024
 _CHUNK_FRAMES = 65_536
 
@@ -16,10 +18,14 @@ TARGET_SAMPLE_RATE = 16_000
 TARGET_CHANNELS = 1
 TARGET_SAMPLE_WIDTH = 2
 
-# Normalization decodes and filters in pure Python, so it is linear in frame
-# count with no native acceleration. v0.1 works on short utterances; refuse
-# anything long enough to look like a hang instead of appearing to stall.
-MAX_NORMALIZE_SECONDS = 600.0
+# Normalization holds the decoded signal in memory, so the bound is memory
+# rather than time. Half an hour of 48 kHz audio is a few hundred megabytes of
+# float64 and a few seconds of work; beyond that, refuse rather than thrash.
+MAX_NORMALIZE_SECONDS = 1800.0
+
+# Output samples computed per pass, which caps peak memory independently of
+# how long the recording is.
+_RESAMPLE_CHUNK = 1 << 20
 
 _TAPS_PER_PHASE = 32
 _INT16_PEAK = 32_767
@@ -192,7 +198,7 @@ class NormalizationManifest:
         return asdict(self)
 
 
-def _blackman_sinc(taps: int, cutoff: float) -> list[float]:
+def _blackman_sinc(taps: int, cutoff: float) -> np.typing.NDArray[np.float64]:
     """Linear-phase windowed-sinc low-pass, normalized to unit DC gain.
 
     `cutoff` is in cycles per sample of the upsampled rate. A Blackman window
@@ -200,32 +206,31 @@ def _blackman_sinc(taps: int, cutoff: float) -> list[float]:
     back into the band the pitch extractor reads.
     """
     center = (taps - 1) / 2
-    kernel: list[float] = []
-    for index in range(taps):
-        offset = index - center
-        if offset == 0.0:
-            value = 2.0 * cutoff
-        else:
-            value = math.sin(2.0 * math.pi * cutoff * offset) / (math.pi * offset)
-        ratio = index / (taps - 1)
-        window = (
-            0.42 - 0.5 * math.cos(2.0 * math.pi * ratio) + 0.08 * math.cos(4.0 * math.pi * ratio)
-        )
-        kernel.append(value * window)
-    total = sum(kernel)
+    offsets = np.arange(taps, dtype=np.float64) - center
+    with np.errstate(invalid="ignore", divide="ignore"):
+        kernel = np.sin(2.0 * np.pi * cutoff * offsets) / (np.pi * offsets)
+    kernel[offsets == 0.0] = 2.0 * cutoff
+
+    ratios = np.arange(taps, dtype=np.float64) / (taps - 1)
+    kernel *= 0.42 - 0.5 * np.cos(2.0 * np.pi * ratios) + 0.08 * np.cos(4.0 * np.pi * ratios)
+
+    total = float(kernel.sum())
     if total == 0.0 or not math.isfinite(total):
         raise AudioNormalizationError("resampling filter is degenerate")
-    return [value / total for value in kernel]
+    return kernel / total
 
 
-def _resample(samples: list[float], source_rate: int, target_rate: int) -> list[float]:
+def _resample(
+    samples: np.typing.NDArray[np.float64], source_rate: int, target_rate: int
+) -> np.typing.NDArray[np.float64]:
     """Deterministic rational polyphase resampling.
 
     Upsample by `up`, low-pass, decimate by `down`, evaluated directly through
     the filter's polyphase decomposition so no zero-stuffed signal is built.
+    Output is produced in chunks, so peak memory does not grow with duration.
     """
     if source_rate == target_rate:
-        return list(samples)
+        return samples
 
     divisor = math.gcd(source_rate, target_rate)
     up = target_rate // divisor
@@ -233,52 +238,85 @@ def _resample(samples: list[float], source_rate: int, target_rate: int) -> list[
     taps = _TAPS_PER_PHASE * up + 1
     # Band-limit to whichever Nyquist is lower, expressed against the upsampled rate.
     kernel = _blackman_sinc(taps, 0.5 / max(up, down))
+
+    # Phase p holds kernel[p], kernel[p + up], ... Padding to a rectangle lets
+    # every phase be gathered in one indexed read.
+    padded = np.zeros(up * _TAPS_PER_PHASE + up, dtype=np.float64)
+    padded[:taps] = kernel
     # Compensate for the energy lost to zero-stuffing.
-    phases = [[value * up for value in kernel[phase::up]] for phase in range(up)]
+    phases = padded.reshape(-1, up).T * up
 
     center = (taps - 1) // 2
-    frame_count = len(samples)
+    frame_count = samples.size
     output_count = frame_count * up // down
-    resampled: list[float] = []
-    for index in range(output_count):
-        position = index * down + center
-        coefficients = phases[position % up]
-        base = position // up
-        total = 0.0
-        for offset, coefficient in enumerate(coefficients):
+    taps_per_phase = phases.shape[1]
+
+    resampled = np.empty(output_count, dtype=np.float64)
+    for start in range(0, output_count, _RESAMPLE_CHUNK):
+        stop = min(start + _RESAMPLE_CHUNK, output_count)
+        positions = np.arange(start, stop, dtype=np.int64) * down + center
+        phase_index = positions % up
+        base = positions // up
+
+        # Only the first and last chunks can reach outside the signal. Copying
+        # a zero-padded array to avoid the check would double peak memory,
+        # which is what actually bounds how long a recording can be.
+        interior = base[0] >= taps_per_phase - 1 and base[-1] < frame_count
+
+        total = np.zeros(stop - start, dtype=np.float64)
+        for offset in range(taps_per_phase):
             source_index = base - offset
-            if source_index < 0:
-                break
-            if source_index < frame_count:
-                total += coefficient * samples[source_index]
-        resampled.append(total)
+            coefficients = phases[phase_index, offset]
+            if interior:
+                total += coefficients * samples[source_index]
+                continue
+            np.clip(source_index, 0, frame_count - 1, out=source_index)
+            inside = (base - offset >= 0) & (base - offset < frame_count)
+            total += coefficients * samples[source_index] * inside
+        resampled[start:stop] = total
     return resampled
 
 
-def _quantize(value: float) -> int:
-    """Round half away from zero, then clamp into signed 16-bit range."""
-    scaled = value * _INT16_PEAK
-    sample = math.floor(scaled + 0.5) if scaled >= 0.0 else math.ceil(scaled - 0.5)
-    return max(_INT16_FLOOR, min(_INT16_PEAK, sample))
+def _quantize(values: np.typing.NDArray[np.float64]) -> np.typing.NDArray[np.int16]:
+    """Round half away from zero, then clamp into signed 16-bit range.
+
+    Chunked and written in place: whole-array temporaries here were the peak of
+    the whole conversion, which is what limits how long a recording can be.
+    """
+    quantized = np.empty(values.size, dtype=np.int16)
+    for start in range(0, values.size, _RESAMPLE_CHUNK):
+        stop = min(start + _RESAMPLE_CHUNK, values.size)
+        block = values[start:stop] * _INT16_PEAK
+        # floor(|x| + 0.5) carrying x's sign is round-half-away-from-zero.
+        np.abs(block, out=block)
+        np.floor(block + 0.5, out=block)
+        np.copysign(block, values[start:stop], out=block)
+        np.clip(block, _INT16_FLOOR, _INT16_PEAK, out=block)
+        quantized[start:stop] = block.astype(np.int16)
+    return quantized
 
 
-def _read_mono_samples(source_bytes: bytes, inspection: AudioInspection) -> list[float]:
+def _read_mono_samples(
+    source_bytes: bytes, inspection: AudioInspection
+) -> np.typing.NDArray[np.float64]:
     """Decode to mono float samples in [-1, 1] by averaging channels."""
     channels = inspection.channels
     sample_width = inspection.sample_width_bits // 8
     full_scale = float(1 << (inspection.sample_width_bits - 1))
-    mono: list[float] = []
+
+    mono = np.empty(inspection.frame_count, dtype=np.float64)
+    written = 0
     with wave.open(io.BytesIO(source_bytes), "rb") as stream:
         remaining_frames = inspection.frame_count
         while remaining_frames > 0:
             requested = min(_CHUNK_FRAMES, remaining_frames)
             frames = stream.readframes(requested)
-            decoded = list(_decode_pcm(frames, sample_width))
-            remaining_frames -= len(decoded) // channels
-            for start in range(0, len(decoded), channels):
-                frame = decoded[start : start + channels]
-                mono.append(sum(frame) / (channels * full_scale))
-    return mono
+            decoded = np.fromiter(_decode_pcm(frames, sample_width), dtype=np.float64, count=-1)
+            block = decoded.reshape(-1, channels)
+            remaining_frames -= block.shape[0]
+            mono[written : written + block.shape[0]] = block.mean(axis=1) / full_scale
+            written += block.shape[0]
+    return mono[:written]
 
 
 def normalize_wav(path: Path, output_path: Path) -> NormalizationManifest:
@@ -309,10 +347,15 @@ def normalize_wav(path: Path, output_path: Path) -> NormalizationManifest:
 
     if samples_modified:
         mono = _read_mono_samples(source_bytes, inspection)
+        # The encoded source is no longer needed, and on a long recording it is
+        # hundreds of megabytes competing with the decoded signal.
+        source_bytes = b""
         resampled = _resample(mono, inspection.sample_rate, TARGET_SAMPLE_RATE)
-        if not resampled:
+        del mono
+        if resampled.size == 0:
             raise AudioNormalizationError("normalization produced no audio frames")
-        payload = b"".join(struct.pack("<h", _quantize(value)) for value in resampled)
+        payload = _quantize(resampled).astype("<i2").tobytes()
+        del resampled
         channel_mix = "identity" if inspection.channels == 1 else "mean"
         if inspection.sample_rate == TARGET_SAMPLE_RATE:
             resampler, ratio, taps_per_phase = "none", "1/1", 0

@@ -9,8 +9,10 @@ import sys
 import wave
 from pathlib import Path
 
+import numpy as np
 import pytest
 
+from prosody_markup import audio as audio_module
 from prosody_markup.audio import (
     MAX_WAV_BYTES,
     AudioInspectionError,
@@ -343,3 +345,46 @@ def test_audio_normalize_cli_reports_clipped_input_without_traceback(tmp_path: P
     assert "clipped" in completed.stderr
     assert "Traceback" not in completed.stderr
     assert not output.exists()
+
+
+def test_normalize_refuses_audio_beyond_the_duration_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The limit is memory, not patience, so it fails closed rather than thrashing."""
+    source = tmp_path / "long.wav"
+    _write_wav(source, sample_rate=44_100, duration_s=0.2)
+    monkeypatch.setattr(audio_module, "MAX_NORMALIZE_SECONDS", 0.05)
+
+    with pytest.raises(AudioNormalizationError, match="normalization limit"):
+        normalize_wav(source, tmp_path / "out.wav")
+
+
+def test_quantization_rounds_half_away_from_zero() -> None:
+    """Banker's rounding would bias the waveform, so halves go outward."""
+    full_scale = 32767.0
+    values = np.array([0.5, -0.5, 1.5, -1.5, 2.5, -2.5]) / full_scale
+
+    quantized = audio_module._quantize(values)
+
+    assert quantized.tolist() == [1, -1, 2, -2, 3, -3]
+
+
+def test_quantization_clamps_into_range() -> None:
+    quantized = audio_module._quantize(np.array([2.0, -2.0]))
+
+    assert quantized.tolist() == [32767, -32768]
+
+
+def test_resampling_is_chunk_boundary_independent(tmp_path: Path) -> None:
+    """Output must not depend on how the work was divided internally."""
+    source = tmp_path / "tone.wav"
+    _write_wav(source, sample_rate=44_100, duration_s=0.5, frequency=300.0)
+
+    default = normalize_wav(source, tmp_path / "default.wav").output_sha256
+    audio_module._RESAMPLE_CHUNK, original = 97, audio_module._RESAMPLE_CHUNK
+    try:
+        tiny = normalize_wav(source, tmp_path / "tiny.wav").output_sha256
+    finally:
+        audio_module._RESAMPLE_CHUNK = original
+
+    assert default == tiny
