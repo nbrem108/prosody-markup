@@ -19,7 +19,7 @@ _MAD_TO_SIGMA = 1.4826
 REAL_AUDIO_CHANNELS = {"pitch"}
 
 
-class NormalizationError(ValueError):
+class ProminenceError(ValueError):
     """Raised when a trustworthy speaker baseline cannot be established."""
 
 
@@ -98,14 +98,14 @@ def compute_baseline(document: Document, settings: BaselineSettings | None = Non
 
     speaker = str(document.baseline.get("speaker") or "").strip()
     if not speaker:
-        raise NormalizationError("baseline.speaker is required to normalize a session")
+        raise ProminenceError("baseline.speaker is required to normalize a session")
     window_s = document.audio.get("duration_s")
     if not isinstance(window_s, (int, float)) or not math.isfinite(window_s) or window_s <= 0:
-        raise NormalizationError("audio.duration_s is required to record the baseline window")
+        raise ProminenceError("audio.duration_s is required to record the baseline window")
 
     measured = _measured_pitch(document)
     if len(measured) < settings.min_measured_words:
-        raise NormalizationError(
+        raise ProminenceError(
             f"only {len(measured)} measured words; at least {settings.min_measured_words} are "
             "needed for a session baseline"
         )
@@ -127,7 +127,7 @@ def compute_baseline(document: Document, settings: BaselineSettings | None = Non
 
 
 @dataclass(frozen=True, slots=True)
-class NormalizationResult:
+class ProminenceResult:
     document: Document
     baseline: Baseline
     candidates: list[Candidate]
@@ -163,7 +163,7 @@ def normalize_and_assign(
     legend: Legend,
     settings: BaselineSettings | None = None,
     channels: set[str] | None = None,
-) -> NormalizationResult:
+) -> ProminenceResult:
     """Turn raw per-word pitch into normalized candidates and conservative marks.
 
     Confidence in the normalized feature is the word's voiced coverage: the
@@ -218,7 +218,7 @@ def normalize_and_assign(
         "enabled_channels": sorted(restricted.channels),
         "degenerate_spread": degenerate,
     }
-    return NormalizationResult(
+    return ProminenceResult(
         document=document,
         baseline=baseline,
         candidates=candidates,

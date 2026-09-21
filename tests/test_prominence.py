@@ -9,9 +9,9 @@ import pytest
 
 from prosody_markup.legend import load_legend
 from prosody_markup.models import Document, Token
-from prosody_markup.normalize import (
+from prosody_markup.prominence import (
     BaselineSettings,
-    NormalizationError,
+    ProminenceError,
     compute_baseline,
     normalize_and_assign,
 )
@@ -107,7 +107,7 @@ def test_baseline_reaches_the_ir() -> None:
 def test_speaker_metadata_is_required() -> None:
     document = _document([_token(i, f"w{i}", 150.0 + i) for i in range(10)], speaker="  ")
 
-    with pytest.raises(NormalizationError, match="baseline.speaker is required"):
+    with pytest.raises(ProminenceError, match="baseline.speaker is required"):
         compute_baseline(document)
 
 
@@ -115,7 +115,7 @@ def test_session_duration_is_required() -> None:
     document = _document([_token(i, f"w{i}", 150.0 + i) for i in range(10)])
     document.audio = {}
 
-    with pytest.raises(NormalizationError, match="audio.duration_s is required"):
+    with pytest.raises(ProminenceError, match="audio.duration_s is required"):
         compute_baseline(document)
 
 
@@ -123,7 +123,7 @@ def test_too_few_measured_words_refuses_a_baseline() -> None:
     """A median over three words describes the sample, not the speaker."""
     document = _document([_token(i, f"w{i}", 150.0 + i) for i in range(3)])
 
-    with pytest.raises(NormalizationError, match="at least 5"):
+    with pytest.raises(ProminenceError, match="at least 5"):
         compute_baseline(document)
 
 
@@ -250,7 +250,7 @@ def test_normalization_is_robust_to_a_single_octave_error() -> None:
     )
 
 
-def test_normalize_cli_writes_marks_and_candidates(tmp_path: Path) -> None:
+def test_prominence_cli_writes_marks_and_candidates(tmp_path: Path) -> None:
     tokens = _natural_tokens(30, prominent={2, 7, 12, 17, 22})
     features = tmp_path / "features.json"
     features.write_text(json.dumps(_document(tokens).to_dict()), encoding="utf-8")
@@ -262,7 +262,7 @@ def test_normalize_cli_writes_marks_and_candidates(tmp_path: Path) -> None:
             sys.executable,
             "-m",
             "prosody_markup.cli",
-            "normalize",
+            "prominence",
             str(features),
             "--output",
             str(output),
@@ -282,7 +282,7 @@ def test_normalize_cli_writes_marks_and_candidates(tmp_path: Path) -> None:
     assert len(rows) > sum(1 for token in assigned["tokens"] if token["marks"])
 
 
-def test_normalize_cli_reports_a_missing_speaker_without_traceback(tmp_path: Path) -> None:
+def test_prominence_cli_reports_a_missing_speaker_without_traceback(tmp_path: Path) -> None:
     document = _document([_token(i, f"w{i}", 150.0 + i) for i in range(10)], speaker="  ")
     features = tmp_path / "features.json"
     features.write_text(json.dumps(document.to_dict()), encoding="utf-8")
@@ -292,7 +292,7 @@ def test_normalize_cli_reports_a_missing_speaker_without_traceback(tmp_path: Pat
             sys.executable,
             "-m",
             "prosody_markup.cli",
-            "normalize",
+            "prominence",
             str(features),
             "--output",
             str(tmp_path / "assigned.json"),

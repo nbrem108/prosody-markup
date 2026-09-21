@@ -11,7 +11,7 @@ from .audio import AudioError, inspect_wav, normalize_wav
 from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
-from .normalize import NormalizationError, normalize_and_assign
+from .prominence import ProminenceError, normalize_and_assign
 from .render import RENDERERS
 from .transcribe import (
     FasterWhisperAdapter,
@@ -96,7 +96,7 @@ def _extract(args: argparse.Namespace) -> int:
     return 0
 
 
-def _normalize(args: argparse.Namespace) -> int:
+def _prominence(args: argparse.Namespace) -> int:
     document = _load_document(args.input)
     legend = load_legend(args.legend)
     result = normalize_and_assign(document, legend)
@@ -174,15 +174,15 @@ def build_parser() -> argparse.ArgumentParser:
     extract_parser.add_argument("--pitch-ceiling", dest="pitch_ceiling", type=float, default=500.0)
     extract_parser.set_defaults(handler=_extract)
 
-    normalize_parser = subparsers.add_parser(
-        "normalize",
+    prominence_parser = subparsers.add_parser(
+        "prominence",
         help="Normalize measured pitch against a speaker baseline and assign marks",
     )
-    normalize_parser.add_argument("input", type=Path)
-    normalize_parser.add_argument("--output", type=Path, required=True)
-    normalize_parser.add_argument("--candidates", type=Path)
-    normalize_parser.add_argument("--legend", type=Path)
-    normalize_parser.set_defaults(handler=_normalize)
+    prominence_parser.add_argument("input", type=Path)
+    prominence_parser.add_argument("--output", type=Path, required=True)
+    prominence_parser.add_argument("--candidates", type=Path)
+    prominence_parser.add_argument("--legend", type=Path)
+    prominence_parser.set_defaults(handler=_prominence)
     return parser
 
 
@@ -190,7 +190,7 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except (AudioError, TranscriptionError, ExtractionError, NormalizationError) as exc:
+    except (AudioError, TranscriptionError, ExtractionError, ProminenceError) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 
