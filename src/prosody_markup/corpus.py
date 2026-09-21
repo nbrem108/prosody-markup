@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -242,3 +242,86 @@ def summarize(manifest: CorpusManifest) -> dict[str, Any]:
         "clips_per_speaker": {speaker: len(clips) for speaker, clips in sorted(grouped.items())},
         "rights_bases": sorted({clip.rights_basis for clip in manifest.clips}),
     }
+
+
+# Kept with the writer so an ingested manifest never loses the reason it is
+# strict. It stays true whether the corpus is empty or full.
+_MANIFEST_HEADER = """# v0.1 engineering corpus.
+#
+# Entries are added only as real recordings arrive with their rights basis
+# established. No placeholder speaker, consent, or checksum record belongs
+# here: a fabricated provenance record is worse than an absent one, because
+# it reads as evidence.
+#
+# Add a clip with 'prosody-markup corpus add'; it computes the checksum and
+# refuses anything the rules in corpus/README.md would reject.
+"""
+
+
+def dump_manifest(manifest: CorpusManifest) -> str:
+    """Serialize a manifest, keeping the header that explains its rules."""
+    payload = {
+        "schema_version": manifest.schema_version,
+        "name": manifest.name,
+        "status": manifest.status,
+        "purpose": manifest.purpose,
+        "speakers": [
+            {key: value for key, value in asdict(speaker).items() if value is not None}
+            for speaker in manifest.speakers
+        ],
+        "clips": [
+            {key: value for key, value in asdict(clip).items() if value not in (None, {}, "")}
+            for clip in manifest.clips
+        ],
+    }
+    body = yaml.safe_dump(payload, sort_keys=False, allow_unicode=True, width=100)
+    return _MANIFEST_HEADER + body
+
+
+def next_clip_id(manifest: CorpusManifest) -> str:
+    used = {clip.id for clip in manifest.clips}
+    index = 1
+    while f"clip-{index:04d}" in used:
+        index += 1
+    return f"clip-{index:04d}"
+
+
+def add_clip(
+    manifest: CorpusManifest,
+    clip: Clip,
+    *,
+    accent: str | None = None,
+    audio_root: Path | None = None,
+) -> CorpusManifest:
+    """Return a manifest with one more clip, or raise if it would not be valid.
+
+    The whole manifest is re-validated rather than just the new entry, so a
+    clip can never be added into a state the validator would reject.
+    """
+    if any(existing.id == clip.id for existing in manifest.clips):
+        raise CorpusError(f"{clip.id}: clip id is already in the manifest")
+    duplicate = next(
+        (existing.id for existing in manifest.clips if existing.sha256 == clip.sha256), None
+    )
+    if duplicate:
+        raise CorpusError(
+            f"{clip.id}: identical audio is already recorded as {duplicate}; "
+            "the same recording must not be counted twice"
+        )
+
+    speakers = list(manifest.speakers)
+    if not any(speaker.id == clip.speaker for speaker in speakers):
+        speakers.append(Speaker(id=clip.speaker, accent=accent))
+
+    updated = CorpusManifest(
+        schema_version=manifest.schema_version,
+        name=manifest.name,
+        status=manifest.status,
+        purpose=manifest.purpose,
+        speakers=speakers,
+        clips=[*manifest.clips, clip],
+    )
+    problems = validate_manifest(updated, audio_root)
+    if problems:
+        raise CorpusError("; ".join(problems))
+    return updated

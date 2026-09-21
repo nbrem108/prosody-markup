@@ -44,6 +44,56 @@ stored **outside** the repository. The manifest records *that* consent exists an
 never the contributor's name or contact details. This mirrors the de-identification rule in
 `docs/EVALS.md`.
 
+## Adding a recording
+
+`corpus add` measures what it can and refuses what it cannot verify, so the only things you supply
+are the facts only you know:
+
+```bash
+uv run prosody-markup corpus add corpus/manifest.yaml \
+  --audio corpus/audio/spk-01/clip-0001.wav \
+  --speaker spk-01 --accent "General American" \
+  --text "I said the BLUE one, not the red one." \
+  --rights-basis contribution-agreement \
+  --source "recorded for this project" \
+  --consent-date 2026-09-21 --agreement-ref "agreements/spk-01" \
+  --device "USB condenser" --environment "quiet room"
+```
+
+The checksum and duration come from the file, never from typing. The clip id is allocated for you.
+A new speaker is created on first use. The whole manifest is re-validated before anything is
+written, so a clip cannot be added into a state `corpus validate` would later reject.
+
+It refuses, rather than warns:
+
+| Situation | Why |
+|---|---|
+| `contribution-agreement` without `--consent-date` and `--agreement-ref` | consent is evidenced or the clip does not go in |
+| a license outside the compatible set | redistribution would not be permitted |
+| audio already in the manifest under another id | one recording counted twice inflates the corpus without adding evidence |
+| audio outside the corpus directory | the manifest must describe files it actually ships |
+| a file that is not valid PCM WAV | unusable audio never reaches the manifest |
+
+## A session worth recording
+
+The corpus is meant to exercise **contrastive stress** — the same sentence said with prominence in
+different places. Read sentences alone will not do that, which is why generic speech datasets are a
+poor fit even where their licenses are compatible.
+
+For each speaker, record the same sentence several times, stressing a different word each time:
+
+- "I said the **blue** one, not the red one."
+- "**I** said the blue one, not the red one."
+- "I **said** the blue one, not the red one."
+
+Three to five such takes per speaker, five to ten speakers, each clip a few seconds. Keep recording
+conditions varied across speakers — different microphones and rooms are the point, not a defect.
+Record mono 16 kHz WAV if you can; anything `audio normalize` accepts will do, and conversion is
+lossless-by-checksum from there.
+
+Consent before the microphone is on, not after. Store the agreement outside this repository and
+reference it by identifier.
+
 ## Shape of an entry
 
 Illustrative only — the values below are placeholders, not a record of any real person or
