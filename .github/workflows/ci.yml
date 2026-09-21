@@ -25,3 +25,5 @@ jobs:
       - run: uv run mypy src
       - run: uv build
       - run: uv run prosody-markup assign examples/tier1-input.json --format markdown
+      # Provenance is checked without the recordings, so CI never needs private audio.
+      - run: uv run prosody-markup corpus validate corpus/manifest.yaml

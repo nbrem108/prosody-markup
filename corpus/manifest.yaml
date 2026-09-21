@@ -1,0 +1,17 @@
+# v0.1 engineering corpus.
+#
+# This file is intentionally empty. Entries are added only as real recordings
+# arrive with their rights basis established; no placeholder speaker, consent,
+# or checksum record belongs here, because a fabricated provenance record is
+# worse than an absent one.
+#
+# See corpus/README.md for the shape of an entry and the rules it must satisfy.
+schema_version: "corpus-manifest@0.1.0"
+name: "v0.1 engineering corpus"
+status: draft
+purpose: >-
+  Engineering evidence for the v0.1 pitch pipeline across voices, accents,
+  microphones, and contrastive stress. This corpus exercises the pipeline; it
+  is not evidence that readers acquire the marks.
+speakers: []
+clips: []

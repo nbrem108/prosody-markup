@@ -166,6 +166,7 @@ legend/tier1.yaml       declarative thresholds and density policy
 src/prosody_markup/     IR, audio, transcription, extraction, assignment, renderers, CLI
 examples/               deterministic input fixtures
 tests/                  contract, assignment, and renderer tests
+corpus/                 engineering corpus manifest and provenance rules
 docs/                   product brief, architecture, evals, roadmap, governance
 ```
 
