@@ -1,11 +1,12 @@
 # v0.1 engineering corpus.
 #
-# This file is intentionally empty. Entries are added only as real recordings
-# arrive with their rights basis established; no placeholder speaker, consent,
-# or checksum record belongs here, because a fabricated provenance record is
-# worse than an absent one.
+# Entries are added only as real recordings arrive with their rights basis
+# established. No placeholder speaker, consent, or checksum record belongs
+# here: a fabricated provenance record is worse than an absent one, because
+# it reads as evidence.
 #
-# See corpus/README.md for the shape of an entry and the rules it must satisfy.
+# Add a clip with 'prosody-markup corpus add'; it computes the checksum and
+# refuses anything the rules in corpus/README.md would reject.
 schema_version: "corpus-manifest@0.1.0"
 name: "v0.1 engineering corpus"
 status: draft

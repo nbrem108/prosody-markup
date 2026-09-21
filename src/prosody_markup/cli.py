@@ -9,7 +9,17 @@ from typing import Any
 
 from .assign import assign_marks, is_eligible
 from .audio import AudioError, inspect_wav, normalize_wav
-from .corpus import CorpusError, load_manifest, summarize, validate_manifest
+from .corpus import (
+    RIGHTS_BASES,
+    Clip,
+    CorpusError,
+    add_clip,
+    dump_manifest,
+    load_manifest,
+    next_clip_id,
+    summarize,
+    validate_manifest,
+)
 from .evaluate import (
     EvaluationError,
     build_tasks,
@@ -212,6 +222,62 @@ def _evaluate_report(args: argparse.Namespace) -> int:
     return 0 if report.gate_status in {"pass", "fail"} else 3
 
 
+def _corpus_add(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    audio_root = args.audio_root or args.manifest.parent
+
+    # Inspecting first means a file that is not usable audio never reaches the
+    # manifest, and the duration comes from the recording rather than a typist.
+    inspection = inspect_wav(args.audio)
+    audio = args.audio.expanduser().resolve()
+    try:
+        relative = audio.relative_to(audio_root.expanduser().resolve())
+    except ValueError as exc:
+        raise CorpusError(
+            f"audio must live under the corpus root {audio_root}; got {audio}"
+        ) from exc
+
+    consent: dict[str, Any] = {}
+    if args.rights_basis == "contribution-agreement":
+        # Never defaulted: consent is either evidenced or the clip is refused.
+        if not (args.consent_date and args.agreement_ref):
+            raise CorpusError(
+                "contributed audio requires --consent-date and --agreement-ref; "
+                "record the agreement outside this repository and reference it"
+            )
+        consent = {
+            "obtained": True,
+            "date": args.consent_date,
+            "agreement_ref": args.agreement_ref,
+        }
+
+    recording = {
+        key: value
+        for key, value in (("device", args.device), ("environment", args.environment))
+        if value
+    }
+    clip = Clip(
+        id=args.id or next_clip_id(manifest),
+        speaker=args.speaker,
+        path=str(relative),
+        text=args.text,
+        rights_basis=args.rights_basis,
+        sha256=inspection.source_sha256,
+        source=args.source,
+        duration_s=round(inspection.duration_s, 3),
+        license=args.license,
+        license_url=args.license_url,
+        consent=consent,
+        recording=recording,
+    )
+
+    updated = add_clip(manifest, clip, accent=args.accent, audio_root=audio_root)
+    args.manifest.write_text(dump_manifest(updated), encoding="utf-8")
+    print(f"added {clip.id} ({clip.duration_s:.2f}s, {clip.speaker}) -> {args.manifest}")
+    print(json.dumps(summarize(updated), indent=2, sort_keys=True))
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -300,6 +366,31 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-audio", dest="require_audio", action="store_true"
     )
     corpus_validate_parser.set_defaults(handler=_corpus_validate)
+
+    corpus_add_parser = corpus_subparsers.add_parser(
+        "add", help="Add a recording to the corpus manifest with its provenance"
+    )
+    corpus_add_parser.add_argument("manifest", type=Path)
+    corpus_add_parser.add_argument("--audio", type=Path, required=True)
+    corpus_add_parser.add_argument("--speaker", required=True)
+    corpus_add_parser.add_argument("--text", required=True)
+    corpus_add_parser.add_argument(
+        "--rights-basis",
+        dest="rights_basis",
+        required=True,
+        choices=sorted(RIGHTS_BASES),
+    )
+    corpus_add_parser.add_argument("--source", required=True)
+    corpus_add_parser.add_argument("--id")
+    corpus_add_parser.add_argument("--accent")
+    corpus_add_parser.add_argument("--license")
+    corpus_add_parser.add_argument("--license-url", dest="license_url")
+    corpus_add_parser.add_argument("--consent-date", dest="consent_date")
+    corpus_add_parser.add_argument("--agreement-ref", dest="agreement_ref")
+    corpus_add_parser.add_argument("--device")
+    corpus_add_parser.add_argument("--environment")
+    corpus_add_parser.add_argument("--audio-root", dest="audio_root", type=Path)
+    corpus_add_parser.set_defaults(handler=_corpus_add)
 
     evaluate_parser = subparsers.add_parser(
         "evaluate", help="Build annotation tasks and score marks against human labels"

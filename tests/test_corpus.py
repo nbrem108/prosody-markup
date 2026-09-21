@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import math
+import struct
 import subprocess
 import sys
+import wave
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -11,9 +15,13 @@ import yaml
 
 from prosody_markup.corpus import (
     CORPUS_SCHEMA_VERSION,
+    Clip,
     CorpusError,
+    add_clip,
     check_readiness,
+    dump_manifest,
     load_manifest,
+    next_clip_id,
     summarize,
     validate_manifest,
 )
@@ -290,3 +298,254 @@ def test_corpus_cli_accepts_the_repository_manifest() -> None:
 
     assert completed.returncode == 0, completed.stderr
     assert "corpus provenance is complete" in completed.stderr
+
+
+def _write_audio(path: Path, *, frequency: float = 150.0, duration_s: float = 1.5) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    frames = b"".join(
+        struct.pack("<h", int(math.sin(2 * math.pi * frequency * index / 16_000) * 0.4 * 32767))
+        for index in range(int(16_000 * duration_s))
+    )
+    with wave.open(str(path), "wb") as target:
+        target.setnchannels(1)
+        target.setsampwidth(2)
+        target.setframerate(16_000)
+        target.writeframes(frames)
+    return path
+
+
+def _empty_manifest(root: Path) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / "manifest.yaml"
+    _write(path, _manifest(clips=[], speakers=[]))
+    return path
+
+
+def _consented(audio: Path, speaker: str = "spk-01", clip_id: str = "clip-0001") -> Clip:
+    return Clip(
+        id=clip_id,
+        speaker=speaker,
+        path=str(audio.relative_to(audio.parents[2])),
+        text="I said the blue one.",
+        rights_basis="contribution-agreement",
+        sha256=hashlib.sha256(audio.read_bytes()).hexdigest(),
+        source="recorded for this project",
+        duration_s=1.5,
+        consent={"obtained": True, "date": "2026-01-01", "agreement_ref": "agreements/spk-01"},
+    )
+
+
+def test_add_clip_creates_the_speaker_and_validates(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest = load_manifest(_empty_manifest(root))
+
+    updated = add_clip(manifest, _consented(audio), accent="General American", audio_root=root)
+
+    assert [speaker.id for speaker in updated.speakers] == ["spk-01"]
+    assert updated.speakers[0].accent == "General American"
+    assert [clip.id for clip in updated.clips] == ["clip-0001"]
+    assert validate_manifest(updated, audio_root=root, require_audio=True) == []
+
+
+def test_add_clip_refuses_the_same_recording_twice(tmp_path: Path) -> None:
+    """Two names for one recording would inflate the corpus without adding evidence."""
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest = add_clip(load_manifest(_empty_manifest(root)), _consented(audio), audio_root=root)
+
+    duplicate = _consented(audio, speaker="spk-02", clip_id="clip-0002")
+
+    with pytest.raises(CorpusError, match="identical audio is already recorded"):
+        add_clip(manifest, duplicate, audio_root=root)
+
+
+def test_add_clip_refuses_a_duplicate_id(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    first = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    second = _write_audio(root / "audio" / "spk-01" / "clip-0002.wav", frequency=200.0)
+    manifest = add_clip(load_manifest(_empty_manifest(root)), _consented(first), audio_root=root)
+
+    clash = _consented(second, clip_id="clip-0001")
+
+    with pytest.raises(CorpusError, match="clip id is already in the manifest"):
+        add_clip(manifest, clash, audio_root=root)
+
+
+def test_add_clip_refuses_an_entry_the_validator_would_reject(tmp_path: Path) -> None:
+    """A clip can never be added into a state validation would fail."""
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest = load_manifest(_empty_manifest(root))
+    unconsented = replace(_consented(audio), consent={})
+
+    with pytest.raises(CorpusError, match="consent.obtained"):
+        add_clip(manifest, unconsented, audio_root=root)
+
+
+def test_dump_manifest_round_trips_and_keeps_the_header(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest = add_clip(load_manifest(_empty_manifest(root)), _consented(audio), audio_root=root)
+
+    body = dump_manifest(manifest)
+    path = root / "written.yaml"
+    path.write_text(body, encoding="utf-8")
+
+    assert body.startswith("# v0.1 engineering corpus.")
+    assert "fabricated provenance record" in body
+    reloaded = load_manifest(path)
+    assert reloaded.clips == manifest.clips
+    assert reloaded.speakers == manifest.speakers
+
+
+def test_next_clip_id_skips_used_ids(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest = add_clip(load_manifest(_empty_manifest(root)), _consented(audio), audio_root=root)
+
+    assert next_clip_id(manifest) == "clip-0002"
+
+
+def test_corpus_add_cli_computes_the_checksum_from_the_audio(tmp_path: Path) -> None:
+    """The checksum is measured, never typed, so it cannot silently disagree."""
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest_path = _empty_manifest(root)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "corpus",
+            "add",
+            str(manifest_path),
+            "--audio",
+            str(audio),
+            "--speaker",
+            "spk-01",
+            "--text",
+            "I said the blue one.",
+            "--rights-basis",
+            "contribution-agreement",
+            "--source",
+            "recorded for this project",
+            "--consent-date",
+            "2026-01-01",
+            "--agreement-ref",
+            "agreements/spk-01",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    (clip,) = load_manifest(manifest_path).clips
+    assert clip.sha256 == hashlib.sha256(audio.read_bytes()).hexdigest()
+    assert clip.duration_s == pytest.approx(1.5)
+    assert clip.path == "audio/spk-01/clip-0001.wav"
+
+
+def test_corpus_add_cli_refuses_contributed_audio_without_consent(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    audio = _write_audio(root / "audio" / "spk-01" / "clip-0001.wav")
+    manifest_path = _empty_manifest(root)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "corpus",
+            "add",
+            str(manifest_path),
+            "--audio",
+            str(audio),
+            "--speaker",
+            "spk-01",
+            "--text",
+            "Words.",
+            "--rights-basis",
+            "contribution-agreement",
+            "--source",
+            "recorded",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "--consent-date and --agreement-ref" in completed.stderr
+    assert "Traceback" not in completed.stderr
+    assert load_manifest(manifest_path).clips == []
+
+
+def test_corpus_add_cli_refuses_audio_outside_the_corpus(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    _empty_manifest(root)
+    outside = _write_audio(tmp_path / "elsewhere" / "clip.wav")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "corpus",
+            "add",
+            str(root / "manifest.yaml"),
+            "--audio",
+            str(outside),
+            "--speaker",
+            "spk-01",
+            "--text",
+            "Words.",
+            "--rights-basis",
+            "public-domain",
+            "--source",
+            "archive",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "must live under the corpus root" in completed.stderr
+
+
+def test_corpus_add_cli_refuses_a_file_that_is_not_audio(tmp_path: Path) -> None:
+    root = tmp_path / "corpus"
+    _empty_manifest(root)
+    fake = root / "audio" / "spk-01" / "clip.wav"
+    fake.parent.mkdir(parents=True)
+    fake.write_text("not audio", encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "prosody_markup.cli",
+            "corpus",
+            "add",
+            str(root / "manifest.yaml"),
+            "--audio",
+            str(fake),
+            "--speaker",
+            "spk-01",
+            "--text",
+            "Words.",
+            "--rights-basis",
+            "public-domain",
+            "--source",
+            "archive",
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode == 2
+    assert "valid PCM WAV" in completed.stderr
