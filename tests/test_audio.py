@@ -347,16 +347,29 @@ def test_audio_normalize_cli_reports_clipped_input_without_traceback(tmp_path: P
     assert not output.exists()
 
 
+def test_duration_limit_matches_the_input_this_pipeline_expects() -> None:
+    """A dictated prompt, not a recording session.
+
+    Pinned because the number is a product decision rather than a resource one:
+    memory and time are both comfortable well past it, so nothing else in the
+    code would catch a change here.
+    """
+    assert audio_module.MAX_NORMALIZE_SECONDS == 300.0
+
+
 def test_normalize_refuses_audio_beyond_the_duration_limit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The limit is memory, not patience, so it fails closed rather than thrashing."""
+    """Fails closed, and writes nothing, rather than converting part of it."""
     source = tmp_path / "long.wav"
     _write_wav(source, sample_rate=44_100, duration_s=0.2)
     monkeypatch.setattr(audio_module, "MAX_NORMALIZE_SECONDS", 0.05)
 
+    output = tmp_path / "out.wav"
     with pytest.raises(AudioNormalizationError, match="normalization limit"):
-        normalize_wav(source, tmp_path / "out.wav")
+        normalize_wav(source, output)
+
+    assert not output.exists()
 
 
 def test_quantization_rounds_half_away_from_zero() -> None:

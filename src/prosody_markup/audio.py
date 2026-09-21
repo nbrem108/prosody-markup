@@ -18,10 +18,12 @@ TARGET_SAMPLE_RATE = 16_000
 TARGET_CHANNELS = 1
 TARGET_SAMPLE_WIDTH = 2
 
-# Normalization holds the decoded signal in memory, so the bound is memory
-# rather than time. Half an hour of 48 kHz audio is a few hundred megabytes of
-# float64 and a few seconds of work; beyond that, refuse rather than thrash.
-MAX_NORMALIZE_SECONDS = 1800.0
+# Bounded by what the input actually is: a dictated prompt, not a recording
+# session. Five minutes is already generous for voice-to-text, and a longer
+# file is far more likely to be the wrong file than a real utterance, so
+# refusing it is the useful behavior. Memory is comfortable well past this
+# (five minutes peaks near 230 MB), and is not what sets the number.
+MAX_NORMALIZE_SECONDS = 300.0
 
 # Output samples computed per pass, which caps peak memory independently of
 # how long the recording is.
@@ -339,7 +341,8 @@ def normalize_wav(path: Path, output_path: Path) -> NormalizationManifest:
     if inspection.duration_s > MAX_NORMALIZE_SECONDS:
         raise AudioNormalizationError(
             f"audio duration {inspection.duration_s:.1f}s exceeds the "
-            f"{MAX_NORMALIZE_SECONDS:.0f}s normalization limit"
+            f"{MAX_NORMALIZE_SECONDS:.0f}s normalization limit; this pipeline "
+            "expects a dictated utterance, not a long recording"
         )
 
     source_bytes = source.read_bytes()

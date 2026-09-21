@@ -60,10 +60,11 @@ Channel mixing averages channels and resampling uses a deterministic rational po
 Blackman-windowed sinc filter, so repeated runs are byte-identical and decimation does not fold
 energy above 8 kHz back into the band the pitch extractor reads. Audio that is already mono 16 kHz
 signed 16-bit PCM keeps its samples unchanged. Clipped, empty, or over-long input fails closed
-rather than producing degraded audio. Conversion runs at roughly 0.02x realtime and holds the
-decoded signal in memory, so the limit is memory rather than time: 30 minutes of audio peaks near
-900 MB, and anything longer is refused. Conversion parameters, the source checksum, and the output
-checksum are written to a `<output>.manifest.json` sidecar.
+rather than producing degraded audio. Input is capped at five minutes, which is what voice-to-text
+input actually looks like: a file longer than that is far more likely to be the wrong file than a
+real utterance. Conversion runs at roughly 0.02x realtime, so five minutes converts in about six
+seconds. Conversion parameters, the source checksum, and the output checksum are written to a
+`<output>.manifest.json` sidecar.
 
 Transcribe normalized audio into word-timestamp IR:
 
