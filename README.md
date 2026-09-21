@@ -60,9 +60,10 @@ Channel mixing averages channels and resampling uses a deterministic rational po
 Blackman-windowed sinc filter, so repeated runs are byte-identical and decimation does not fold
 energy above 8 kHz back into the band the pitch extractor reads. Audio that is already mono 16 kHz
 signed 16-bit PCM keeps its samples unchanged. Clipped, empty, or over-long input fails closed
-rather than producing degraded audio; normalization runs in pure Python and is therefore limited to
-10 minutes of audio. Conversion parameters, the source checksum, and the output checksum are
-written to a `<output>.manifest.json` sidecar.
+rather than producing degraded audio. Conversion runs at roughly 0.02x realtime and holds the
+decoded signal in memory, so the limit is memory rather than time: 30 minutes of audio peaks near
+900 MB, and anything longer is refused. Conversion parameters, the source checksum, and the output
+checksum are written to a `<output>.manifest.json` sidecar.
 
 Transcribe normalized audio into word-timestamp IR:
 
@@ -72,7 +73,12 @@ uv run prosody-markup transcribe normalized.wav --output transcript.json --speak
 
 Transcription runs behind a provider-neutral adapter, so no engine type reaches the rest of the
 pipeline. The reference adapter is local `faster-whisper`, imported lazily and never required by
-the package, its tests, or CI; install it yourself to transcribe real audio. Input must already be
+the package, its tests, or CI. Add it with the `asr` extra, which pulls a large native runtime and
+needs a one-time model download:
+
+```bash
+uv sync --extra asr
+``` Input must already be
 canonical, so transcription never silently resamples and loses provenance. Word timestamps are
 checked for monotonicity and against the recording length, and model identity, version, and audio
 checksum are recorded. Low-confidence words are kept rather than dropped — suppression is the
