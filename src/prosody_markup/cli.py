@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 from pathlib import Path
@@ -9,6 +10,14 @@ from typing import Any
 from .assign import assign_marks, is_eligible
 from .audio import AudioError, inspect_wav, normalize_wav
 from .corpus import CorpusError, load_manifest, summarize, validate_manifest
+from .evaluate import (
+    EvaluationError,
+    build_tasks,
+    evaluate,
+    load_annotations,
+    render_report,
+    tasks_payload,
+)
 from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
@@ -160,6 +169,49 @@ def _corpus_validate(args: argparse.Namespace) -> int:
     return 0
 
 
+def _load_runs(directory: Path) -> dict[str, Document]:
+    documents: dict[str, Document] = {}
+    for path in sorted(directory.glob("*/assigned.json")):
+        documents[path.parent.name] = _load_document(path)
+    if not documents:
+        raise EvaluationError(f"no run bundles with assigned.json found under {directory}")
+    return documents
+
+
+def _evaluate_tasks(args: argparse.Namespace) -> int:
+    payload = tasks_payload(build_tasks(_load_runs(args.runs)))
+    body = json.dumps(payload, indent=2, sort_keys=True) + "\n"
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(body, encoding="utf-8")
+    digest = hashlib.sha256(body.encode("utf-8")).hexdigest()
+    print(f"{len(payload['tasks'])} tasks -> {args.output}")
+    print(f"tasks_sha256: {digest}")
+    return 0
+
+
+def _evaluate_report(args: argparse.Namespace) -> int:
+    documents = _load_runs(args.runs)
+    annotations = load_annotations(args.labels)
+    report = evaluate(
+        documents,
+        annotations,
+        tuning_speakers=set(args.tuning_speakers or []),
+        tasks_sha256=args.tasks_sha256,
+    )
+    args.output.parent.mkdir(parents=True, exist_ok=True)
+    args.output.write_text(
+        json.dumps(report.payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    markdown = render_report(report)
+    if args.markdown:
+        args.markdown.parent.mkdir(parents=True, exist_ok=True)
+        args.markdown.write_text(markdown + "\n", encoding="utf-8")
+    print(markdown)
+    # A failed gate is a reportable result, not a broken run, so only an
+    # unusable sample is an error exit.
+    return 0 if report.gate_status in {"pass", "fail"} else 3
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -248,6 +300,29 @@ def build_parser() -> argparse.ArgumentParser:
         "--require-audio", dest="require_audio", action="store_true"
     )
     corpus_validate_parser.set_defaults(handler=_corpus_validate)
+
+    evaluate_parser = subparsers.add_parser(
+        "evaluate", help="Build annotation tasks and score marks against human labels"
+    )
+    evaluate_subparsers = evaluate_parser.add_subparsers(dest="evaluate_command", required=True)
+
+    tasks_parser = evaluate_subparsers.add_parser(
+        "tasks", help="Build blind annotation tasks from run bundles"
+    )
+    tasks_parser.add_argument("runs", type=Path)
+    tasks_parser.add_argument("--output", type=Path, required=True)
+    tasks_parser.set_defaults(handler=_evaluate_tasks)
+
+    report_parser = evaluate_subparsers.add_parser(
+        "report", help="Score runs against majority annotator labels"
+    )
+    report_parser.add_argument("runs", type=Path)
+    report_parser.add_argument("--labels", type=Path, required=True)
+    report_parser.add_argument("--output", type=Path, required=True)
+    report_parser.add_argument("--markdown", type=Path)
+    report_parser.add_argument("--tasks-sha256", dest="tasks_sha256")
+    report_parser.add_argument("--tuning-speakers", dest="tuning_speakers", nargs="+")
+    report_parser.set_defaults(handler=_evaluate_report)
     return parser
 
 
@@ -262,6 +337,7 @@ def main() -> int:
         ProminenceError,
         PipelineError,
         CorpusError,
+        EvaluationError,
     ) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2

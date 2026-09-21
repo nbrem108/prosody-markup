@@ -41,6 +41,18 @@ With explicit consent, locally captured scrub events, corrections, suppressed ca
 opt-out/disable events can be exported as de-identified eval candidates. Audio collection is never
 implicit. Production failures promoted into fixtures retain license and consent provenance.
 
+## Running layer 2
+
+`prosody-markup evaluate tasks` builds blind labelling tasks from run bundles, carrying only token
+ids and lexical text so annotators are not anchored by system output. `prosody-markup evaluate
+report` scores runs against majority labels and emits both JSON and Markdown.
+
+Coverage is checked before the gate. A sample short of 100 utterances, 10 speakers, or 3 annotators
+reports `insufficient-data` rather than a pass, however good its precision looks, because a
+precision figure from too small a sample is not the result this gate asks for. False positives are
+split by category so a failure points somewhere: marks kept only by the short-turn floor are
+counted separately from marks no annotator agreed with, and from marks that split the annotators.
+
 ## Corpus provenance
 
 Real-audio clips live in [`corpus/`](../corpus/README.md) behind a manifest that records, per clip,

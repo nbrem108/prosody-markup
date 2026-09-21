@@ -152,6 +152,38 @@ uv run prosody-markup prominence features.json --output assigned.json
 uv run prosody-markup assign assigned.json --format markdown
 ```
 
+## Evaluating the marks
+
+Marks are only worth anything if listeners agree with them. Build blind annotation tasks from a
+directory of run bundles, then score the runs against majority labels:
+
+```bash
+uv run prosody-markup evaluate tasks reports/generated --output tasks.json
+uv run prosody-markup evaluate report reports/generated \
+  --labels labels/ --output report.json --markdown report.md
+```
+
+Tasks carry only token ids and lexical text. Marks, features, confidences, and suppression reasons
+are all left behind, so an annotator cannot be anchored by what the system already decided.
+
+The report leads with a verdict rather than a number, and **a precision figure from too small a
+sample is not a gate result**. Where the sample falls short of 100 utterances, 10 speakers, or 3
+annotators, the gate reports insufficient data even when precision is perfect:
+
+```text
+**INSUFFICIENT DATA - not a gate result**
+
+Precision 100.0% against a 85% gate, measured on the overall split.
+- Utterances: 3 (need 100)
+- Speakers: 3 (need 10)
+```
+
+It reports Fleiss' kappa across annotators, precision first and recall as diagnostic, mark density,
+suppression rates, and false positives split by category — `density_floor_retained`,
+`no_annotator_agreed`, `split_decision`. A failing gate names the upstream change each category
+points at, rather than leaving a bare number. Pass `--tuning-speakers` to hold the remaining
+speakers out, and the gate is measured on the held-out split.
+
 Expected marked text:
 
 ```text
