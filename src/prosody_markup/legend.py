@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from importlib import resources
 from pathlib import Path
 from typing import IO, Any
@@ -33,6 +33,20 @@ class Legend:
     min_marks_per_turn: int
     channels: dict[str, ChannelRule]
     suppression: SuppressionPolicy
+
+    def restrict_channels(self, names: set[str]) -> Legend:
+        """A legend exposing only the named channels.
+
+        Real-audio v0.1 enables pitch alone while the other channels stay
+        fixture-tested, so the restriction belongs to the run rather than to
+        the legend file.
+        """
+        unknown = names - set(self.channels)
+        if unknown:
+            raise ValueError(f"Unknown legend channels: {sorted(unknown)}")
+        return replace(
+            self, channels={name: rule for name, rule in self.channels.items() if name in names}
+        )
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> Legend:
