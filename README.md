@@ -118,7 +118,31 @@ with no usable spread, produces no marks rather than guesses. Only the pitch cha
 duration and timing stay fixture-tested until separately validated. `--candidates` records what the
 legend proposed, separately from what the density cap kept.
 
-The whole chain, from a 44.1 kHz stereo recording to marked text:
+Or run every stage at once, with the full diagnostic bundle:
+
+```bash
+uv run prosody-markup process recording.wav --speaker S1 \
+  --channels pitch --format markdown --debug-dir reports/generated/run-001
+```
+
+```text
+I said the *BLUE* one not the red one
+```
+
+Each stage writes its artifact before the next begins, so a failed run leaves the bundle it managed
+to produce plus a manifest naming the stage that failed. Nothing downstream of a failure is written
+and no output is invented to fill the gap. The manifest records every schema, model, and config
+version the run used, the settings it ran with, and a checksum per artifact.
+
+```text
+reports/generated/run-001/
+  audio-summary.json          audio-normalization.json    normalized.wav
+  transcript.json             word-features.csv           pitch-contour.csv
+  candidates.json             assigned.json               rendered.md
+  run-manifest.json
+```
+
+The equivalent stage by stage, if you want to stop and inspect in between:
 
 ```bash
 uv run prosody-markup audio normalize recording.wav --output normalized.wav
@@ -126,10 +150,6 @@ uv run prosody-markup transcribe normalized.wav --output transcript.json --speak
 uv run prosody-markup extract normalized.wav transcript.json --output features.json
 uv run prosody-markup prominence features.json --output assigned.json
 uv run prosody-markup assign assigned.json --format markdown
-```
-
-```text
-I said the *BLUE* one not the red one
 ```
 
 Expected marked text:

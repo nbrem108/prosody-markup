@@ -11,6 +11,7 @@ from .audio import AudioError, inspect_wav, normalize_wav
 from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
+from .pipeline import PipelineError, run_pipeline
 from .prominence import ProminenceError, normalize_and_assign
 from .render import RENDERERS
 from .transcribe import (
@@ -122,6 +123,29 @@ def _prominence(args: argparse.Namespace) -> int:
     return 0
 
 
+def _process(args: argparse.Namespace) -> int:
+    adapter = FasterWhisperAdapter(args.model, device=args.device, language=args.language)
+    result = run_pipeline(
+        args.input,
+        adapter,
+        args.debug_dir,
+        speaker=args.speaker,
+        legend=load_legend(args.legend),
+        channels=set(args.channels),
+        render_format=args.format,
+        turn_id=args.turn_id,
+    )
+    print(result.rendered)
+    summary = result.manifest["summary"]
+    print(
+        f"\n{summary['marks']} marks from {summary['candidates']} candidates "
+        f"({summary['measured_words']}/{summary['eligible_words']} words measured); "
+        f"bundle in {result.debug_dir}",
+        file=sys.stderr,
+    )
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -183,6 +207,21 @@ def build_parser() -> argparse.ArgumentParser:
     prominence_parser.add_argument("--candidates", type=Path)
     prominence_parser.add_argument("--legend", type=Path)
     prominence_parser.set_defaults(handler=_prominence)
+
+    process_parser = subparsers.add_parser(
+        "process", help="Run every local stage from WAV to marked text"
+    )
+    process_parser.add_argument("input", type=Path)
+    process_parser.add_argument("--speaker", required=True)
+    process_parser.add_argument("--debug-dir", dest="debug_dir", type=Path, required=True)
+    process_parser.add_argument("--channels", nargs="+", default=["pitch"])
+    process_parser.add_argument("--format", choices=sorted(RENDERERS), default="markdown")
+    process_parser.add_argument("--turn-id", dest="turn_id", default="turn-1")
+    process_parser.add_argument("--legend", type=Path)
+    process_parser.add_argument("--model", default="base.en")
+    process_parser.add_argument("--device", default="cpu")
+    process_parser.add_argument("--language", default="en")
+    process_parser.set_defaults(handler=_process)
     return parser
 
 
@@ -190,7 +229,13 @@ def main() -> int:
     args = build_parser().parse_args()
     try:
         return int(args.handler(args))
-    except (AudioError, TranscriptionError, ExtractionError, ProminenceError) as exc:
+    except (
+        AudioError,
+        TranscriptionError,
+        ExtractionError,
+        ProminenceError,
+        PipelineError,
+    ) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
 
