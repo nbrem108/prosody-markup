@@ -41,6 +41,19 @@ With explicit consent, locally captured scrub events, corrections, suppressed ca
 opt-out/disable events can be exported as de-identified eval candidates. Audio collection is never
 implicit. Production failures promoted into fixtures retain license and consent provenance.
 
+## Corpus provenance
+
+Real-audio clips live in [`corpus/`](../corpus/README.md) behind a manifest that records, per clip,
+its rights basis, source, consent reference, recording conditions, and checksum. Every clip must
+declare one of three rights bases — a compatible license, a contribution agreement, or public
+domain — and there is no fourth option, so unclear-rights audio cannot be added rather than merely
+being discouraged. Speaker identities are pseudonymous and consent agreements are stored outside
+the repository, referenced by identifier.
+
+Validation runs in CI against the manifest alone, so provenance is enforced without the recordings
+ever entering the repository. That corpus is engineering evidence for the pipeline; it is not
+evidence of acquisition.
+
 ## Minimum eval fixture
 
 Each real-audio eval fixture should contain audio provenance, transcript, word timing, speaker

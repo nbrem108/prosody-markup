@@ -8,6 +8,7 @@ from typing import Any
 
 from .assign import assign_marks, is_eligible
 from .audio import AudioError, inspect_wav, normalize_wav
+from .corpus import CorpusError, load_manifest, summarize, validate_manifest
 from .extract import ExtractionError, PitchSettings, extract_pitch, write_debug_artifacts
 from .legend import load_legend
 from .models import Document
@@ -146,6 +147,19 @@ def _process(args: argparse.Namespace) -> int:
     return 0
 
 
+def _corpus_validate(args: argparse.Namespace) -> int:
+    manifest = load_manifest(args.manifest)
+    problems = validate_manifest(manifest, args.audio_root, require_audio=args.require_audio)
+    print(json.dumps(summarize(manifest), indent=2, sort_keys=True))
+    if problems:
+        print(f"\n{len(problems)} problem(s):", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        return 1
+    print("\ncorpus provenance is complete", file=sys.stderr)
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="prosody-markup")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -222,6 +236,18 @@ def build_parser() -> argparse.ArgumentParser:
     process_parser.add_argument("--device", default="cpu")
     process_parser.add_argument("--language", default="en")
     process_parser.set_defaults(handler=_process)
+
+    corpus_parser = subparsers.add_parser("corpus", help="Work with the engineering corpus")
+    corpus_subparsers = corpus_parser.add_subparsers(dest="corpus_command", required=True)
+    corpus_validate_parser = corpus_subparsers.add_parser(
+        "validate", help="Check corpus manifest structure, rights basis, and checksums"
+    )
+    corpus_validate_parser.add_argument("manifest", type=Path)
+    corpus_validate_parser.add_argument("--audio-root", dest="audio_root", type=Path)
+    corpus_validate_parser.add_argument(
+        "--require-audio", dest="require_audio", action="store_true"
+    )
+    corpus_validate_parser.set_defaults(handler=_corpus_validate)
     return parser
 
 
@@ -235,6 +261,7 @@ def main() -> int:
         ExtractionError,
         ProminenceError,
         PipelineError,
+        CorpusError,
     ) as exc:
         print(f"prosody-markup: error: {exc}", file=sys.stderr)
         return 2
